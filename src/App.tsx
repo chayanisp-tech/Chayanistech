@@ -302,25 +302,32 @@ export default function App() {
   };
 
   // 3. Google Drive / Sheets Synchronizer and State Pushing
-  const pushStateToSheets = async (
+const pushStateToSheets = async (
     updatedStudents?: Student[],
     updatedExams?: Exam[],
     updatedSubmissions?: Submission[],
     updatedSettings?: SystemSettings
   ) => {
-    // Save locally first
+    // บันทึกลงบราวเซอร์ทันที
     saveStateToLocal(updatedStudents, updatedExams, updatedSubmissions, updatedSettings);
 
-    // แก้ไขจุดที่ 2: ปรับปรุงให้ถ้านักเรียนส่งคำตอบเข้ามา และแอปมีเป้าหมาย activeSheetId อยู่ ให้ยิงคะแนนเข้า Google Sheet ของลิงก์นั้นทันที (ไม่ต้องพึ่งสิทธิ์คุณครูเปิดห้อง)
     const targetSheetId = syncStatus.spreadsheetId || activeSheetId;
     const token = getAccessToken();
 
     if (token && targetSheetId) {
       try {
-        const studentsToSync = updatedStudents !== undefined ? updatedStudents : JSON.parse(localStorage.getItem("exam_students") || "[]");
-        const examsToSync = updatedExams !== undefined ? updatedExams : JSON.parse(localStorage.getItem("exam_exams") || "[]");
-        const submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : JSON.parse(localStorage.getItem("exam_submissions") || "[]");
-        const settingsToSync = updatedSettings !== undefined ? updatedSettings : JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS));
+        // ดึงข้อมูลล่าสุดจาก Sheets มาเช็คก่อนที่จะส่ง เพื่อไม่ให้ไปเขียนทับสิ่งที่ครูลบในชีท
+        const fetched = await fetchFromSheets(token, targetSheetId);
+        
+        let studentsToSync = updatedStudents !== undefined ? updatedStudents : (fetched?.students || JSON.parse(localStorage.getItem("exam_students") || "[]"));
+        let examsToSync = updatedExams !== undefined ? updatedExams : (fetched?.exams || JSON.parse(localStorage.getItem("exam_exams") || "[]"));
+        let submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : (fetched?.submissions || JSON.parse(localStorage.getItem("exam_submissions") || "[]"));
+        let settingsToSync = updatedSettings !== undefined ? updatedSettings : (fetched?.settings || JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)));
+
+        // อัปเดตในเครื่องให้ตรงกับชีทด้วย
+        setStudents(studentsToSync);
+        setExams(examsToSync);
+        setSubmissions(submissionsToSync);
 
         await syncLocalToSheets(
           token,
