@@ -298,6 +298,7 @@ export default function TeacherExams({
     setQuestions([]);
     setIsCreating(false);
     setEditingExamId(null);
+    setQError("");
   };
 
   const handleRemoveQuestion = (idx: number) => {
@@ -707,28 +708,29 @@ export default function TeacherExams({
                     value={qPoints}
                     onChange={(e) => setQPoints(Number(e.target.value))}
                     className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
+                    required
                   />
                 </div>
               </div>
 
-              {qError && <p className="text-xs text-[#ba1a1a] font-semibold">{qError}</p>}
+              {qError && <p className="text-xs text-red-600 font-bold">{qError}</p>}
 
               <button
                 type="button"
                 onClick={handleAddQuestion}
-                className="px-4 py-2 bg-[#ffe9e7] hover:bg-[#ffdad7] border border-[#e0bfbc] text-[#8e171c] rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer w-full sm:w-auto"
+                className="w-full py-2.5 bg-white border border-[#8e171c] hover:bg-[#8e171c]/5 text-[#8e171c] rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[16px]">save</span>
-                บันทึกคำถามข้อนี้ลงในตาราง
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                เพิ่มคำถามข้อนี้ลงในชุดข้อสอบ
               </button>
             </div>
 
-            {/* Bottom Buttons to Save Full Exam */}
-            <div className="flex gap-4 pt-4 border-t border-[#e0bfbc]/30 justify-end">
+            {/* Form Actions */}
+            <div className="flex gap-4 justify-end pt-4 border-t border-[#e0bfbc]/30">
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-5 py-2.5 bg-white border border-[#e0bfbc] text-[#59413f] hover:bg-[#fff8f7] rounded-full text-xs font-bold transition-all cursor-pointer"
+                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full text-xs font-bold transition-all cursor-pointer"
               >
                 ยกเลิก
               </button>
@@ -736,78 +738,83 @@ export default function TeacherExams({
                 type="submit"
                 className="px-6 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer"
               >
-                บันทึกชุดข้อสอบนี้
+                {editingExamId ? "บันทึกการแก้ไขข้อสอบ" : "บันทึกและจัดเก็บชุดข้อสอบ"}
               </button>
             </div>
           </form>
         </div>
       ) : (
-        /* Exam Cards List Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {exams.map((exam) => (
-            <div
-              key={exam.id}
-              className="bg-white border border-[#e0bfbc]/60 rounded-3xl p-6 shadow-sm flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex justify-between items-start gap-4 mb-4">
-                  <span className="px-3 py-1 bg-[#ffdad7] text-[#8e171c] font-bold text-xs rounded-full">
-                    {exam.courseCode}
-                  </span>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#8c706e] font-semibold">สถานะเปิดสอบ:</span>
-                    <button
-                      onClick={() => onToggleActive(exam.id)}
-                      className={`w-12 h-6 rounded-full p-0.5 transition-all focus:outline-none ${
-                        exam.isActive ? "bg-[#8e171c] flex justify-end" : "bg-gray-300 flex justify-start"
-                      }`}
-                    >
-                      <span className="w-5 h-5 bg-white rounded-full shadow-sm"></span>
-                    </button>
-                  </div>
-                </div>
-
-                <h3 className="text-lg font-bold text-[#251817] mb-2">{exam.title}</h3>
-                <p className="text-xs text-[#59413f] mb-6 line-clamp-3">{exam.description}</p>
-              </div>
-
-              <div className="border-t border-[#e0bfbc]/30 pt-4 flex items-center justify-between">
-                <div className="flex items-center gap-3 text-xs text-[#8c706e] font-semibold">
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">timer</span>
-                    {exam.timeLimitMinutes} นาที
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">help</span>
-                    {exam.questions.length} ข้อถาม
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleEditExam(exam)}
-                    className="w-8 h-8 rounded-full hover:bg-[#ffe9e7] text-[#8e171c] flex items-center justify-center transition-colors cursor-pointer"
-                    title="แก้ไขชุดข้อสอบ"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">edit</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      if (window.confirm(`คุณแน่ใจที่จะลบแบบทดสอบ ${exam.title} หรือไม่?`)) {
-                        onDeleteExam(exam.id);
-                      }
-                    }}
-                    className="w-8 h-8 rounded-full hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors cursor-pointer"
-                    title="ลบชุดข้อสอบ"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
-              </div>
+        /* Exams List Dashboard Dashboard View */
+        <div className="bg-white border border-[#e0bfbc] rounded-3xl p-6 shadow-sm">
+          {exams.length === 0 ? (
+            <div className="text-center py-12 text-[#59413f]">
+              <span className="material-symbols-outlined text-4xl text-[#e0bfbc] mb-2">quiz</span>
+              <p className="text-sm font-bold">ยังไม่มีชุดข้อสอบวิชาภาษาจีนในระบบ</p>
+              <p className="text-xs mt-1 text-[#8c706e]">คุณครูสามารถคลิกที่ปุ่ม "สร้างข้อสอบใหม่" ด้านบนเพื่อเริ่มสร้างแบบทดสอบได้ทันที</p>
             </div>
-          ))}
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-[#e0bfbc]/50 text-[#251817] font-bold">
+                    <th className="pb-3 pl-2">รหัสวิชา</th>
+                    <th className="pb-3">หัวข้อข้อสอบ</th>
+                    <th className="pb-3 text-center">จำนวนคำถาม</th>
+                    <th className="pb-3 text-center">เวลา (นาที)</th>
+                    <th className="pb-3 text-center">สถานะเปิดสอบ</th>
+                    <th className="pb-3 text-right pr-2">การจัดการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e0bfbc]/20 text-[#59413f] font-medium">
+                  {exams.map((exam) => (
+                    <tr key={exam.id} className="hover:bg-[#fff8f7]/40 transition-colors">
+                      <td className="py-4 pl-2 font-bold text-[#8e171c]">{exam.courseCode}</td>
+                      <td className="py-4">
+                        <div className="font-bold text-[#251817] text-sm">{exam.title}</div>
+                        {exam.description && <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-1 max-w-xs">{exam.description}</div>}
+                      </td>
+                      <td className="py-4 text-center font-bold">{exam.questions.length} ข้อ</td>
+                      <td className="py-4 text-center font-bold">{exam.timeLimitMinutes} นาที</td>
+                      <td className="py-4 text-center">
+                        <button
+                          onClick={() => onToggleActive(exam.id)}
+                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
+                            exam.isActive
+                              ? "bg-green-100 text-green-700 hover:bg-green-200"
+                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                          }`}
+                        >
+                          {exam.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}
+                        </button>
+                      </td>
+                      <td className="py-4 text-right pr-2">
+                        <div className="flex justify-end gap-2.5">
+                          <button
+                            onClick={() => handleEditExam(exam)}
+                            className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">edit</span>
+                            แก้ไข
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`คุณต้องการลบข้อสอบวิชา ${exam.title} ใช่หรือไม่?`)) {
+                                onDeleteExam(exam.id);
+                              }
+                            }}
+                            className="text-red-600 hover:text-red-800 font-bold flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                            ลบ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
