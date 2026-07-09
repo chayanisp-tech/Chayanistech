@@ -9,35 +9,63 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // เปลี่ยนเป็นฟังก์ชันวาดเส้นกริดแบบ 田字格 (สี่ช่องเสมือนแปลงนา)
-  const drawChineseGrid = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // 1. วาดกรอบสี่เหลี่ยมด้านนอก (เส้นทึบ)
-    ctx.strokeStyle = "#e0bfbc"; // สีโทนแดง-ชมพูอ่อนอิงตามธีมระบบ
-    ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, width, height);
+  // กำหนดขนาดและโครงสร้างของตารางคัดจีน
+  const COLS = 6;      // 6 ช่องต่อแถว
+  const ROWS = 2;      // 2 แถว
+  const BOX_SIZE = 80; // ขนาดของแต่ละช่อง (80x80 px กำลังพอดีมือสำหรับเขียน)
+  
+  const canvasWidth = COLS * BOX_SIZE; // 480 px
+  const canvasHeight = ROWS * BOX_SIZE; // 160 px
 
-    // 2. วาดเส้นแบ่งกากบาทด้านใน (เส้นประแนวตั้งและแนวนอน)
+  // ฟังก์ชันวาดตารางกริดแบบ 田字格 หลายช่อง
+  const drawChineseGrid = (ctx: CanvasRenderingContext2D) => {
+    // 1. วาดกรอบนอกและเส้นแบ่งช่องทึบ (สีแดง/ชมพูอิงตามธีมระบบ)
+    ctx.strokeStyle = "#e0bfbc"; 
+    ctx.lineWidth = 1.5;
+
+    // วาดเส้นขอบตารางและเส้นตัดระหว่างช่องใหญ่
+    for (let r = 0; r <= ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * BOX_SIZE);
+      ctx.lineTo(canvasWidth, r * BOX_SIZE);
+      ctx.stroke();
+    }
+    for (let c = 0; c <= COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * BOX_SIZE, 0);
+      ctx.lineTo(c * BOX_SIZE, canvasHeight);
+      ctx.stroke();
+    }
+
+    // 2. วาดเส้นกากบาทประ "田" ด้านในของแต่ละช่อง
     ctx.strokeStyle = "#f0d5d2"; 
     ctx.lineWidth = 1;
-    ctx.setLineDash([6, 6]); // กำหนดรูปแบบเส้นประ
+    ctx.setLineDash([4, 4]); // กำหนดรูปแบบเส้นประเล็กให้ดูสบายตา
 
-    ctx.beginPath();
-    
-    // เส้นตั้งแบ่งครึ่งซ้าย-ขวา
-    ctx.moveTo(width / 2, 0);
-    ctx.lineTo(width / 2, height);
-    
-    // เส้นนอนแบ่งครึ่งบน-ล่าง
-    ctx.moveTo(0, height / 2);
-    ctx.lineTo(width, height / 2);
-    
-    ctx.stroke();
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const startX = c * BOX_SIZE;
+        const startY = r * BOX_SIZE;
+        const centerX = startX + BOX_SIZE / 2;
+        const centerY = startY + BOX_SIZE / 2;
 
-    // รีเซ็ตกลับเป็นเส้นทึบเพื่อไม่ให้พู่กันที่นักเรียนเขียนกลายเป็นเส้นประ
+        ctx.beginPath();
+        // เส้นประตั้งตรงกลางช่อง
+        ctx.moveTo(centerX, startY);
+        ctx.lineTo(centerX, startY + BOX_SIZE);
+        
+        // เส้นประนอนตรงกลางช่อง
+        ctx.moveTo(startX, centerY);
+        ctx.lineTo(startX + BOX_SIZE, centerY);
+        ctx.stroke();
+      }
+    }
+
+    // รีเซ็ตเส้นประกลับเป็นเส้นทึบสำหรับการเขียนพู่กันปกติ
     ctx.setLineDash([]);
   };
 
-  // ส่วนการจัดการ Canvas Lifecycle (โหลดลายเส้นเก่าถ้ามี)
+  // จัดการวงจรชีวิตของ Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -46,7 +74,7 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawChineseGrid(ctx, canvas.width, canvas.height);
+    drawChineseGrid(ctx);
 
     if (value) {
       const img = new Image();
@@ -57,7 +85,7 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     }
   }, [value]);
 
-  // ฟังก์ชันเริ่มต้นการลากเส้นเขียนตัวอักษร
+  // เริ่มเขียน
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -77,15 +105,16 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
       clientY = e.clientY;
     }
 
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    // คำนวณพิกัดโดยเทียบกับอัตราส่วนจริงของ Canvas (แก้ปัญหาพิกัดเพี้ยนเวลาหดขยายจอ)
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
 
     ctx.beginPath();
     ctx.moveTo(x, y);
     
-    // ตั้งค่าหัวพู่กันสีดำ ลากเส้นสมูทลื่นไหล
+    // ตั้งค่าหัวพู่กัน (สีดำ, ขนาด 3.5px เพื่อให้พอดีกับช่องขนาด 80px)
     ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.5;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
@@ -109,14 +138,14 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     if ("touches" in e) {
       clientX = e.touches[0].clientX;
       clientY = e.touches[0].clientY;
-      if (e.cancelable) e.preventDefault(); // กันจอมือถือเลื่อนหลุดขณะเขียน
+      if (e.cancelable) e.preventDefault();
     } else {
       clientX = e.clientX;
       clientY = e.clientY;
     }
 
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    const x = ((clientX - rect.left) / rect.width) * canvas.width;
+    const y = ((clientY - rect.top) / rect.height) * canvas.height;
 
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -141,37 +170,43 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawChineseGrid(ctx, canvas.width, canvas.height);
+    drawChineseGrid(ctx);
     
     onChange("");
   };
 
   return (
-    <div className="flex flex-col items-center gap-3 bg-[#fffaf9] p-4 rounded-3xl border border-[#e0bfbc]/50">
-      <div className="relative overflow-hidden rounded-2xl bg-white shadow-inner">
-        <canvas
-          ref={canvasRef}
-          width={320}
-          height={320}
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-          onTouchStart={startDrawing}
-          onTouchMove={draw}
-          onTouchEnd={stopDrawing}
-          className="cursor-crosshair block touch-none"
-        />
+    <div className="flex flex-col items-center gap-3 bg-[#fffaf9] p-4 rounded-3xl border border-[#e0bfbc]/50 w-full max-w-full overflow-hidden">
+      {/* ห่อหุ้มด้วย div ที่ทำหน้าที่ scroll แนวนอนได้ เผื่อจอมือถือแคบเกินไป */}
+      <div className="relative w-full overflow-x-auto pb-2 scrollbar-thin flex justify-start md:justify-center">
+        <div className="rounded-2xl bg-white shadow-inner overflow-hidden border border-[#e0bfbc]/30" style={{ width: canvasWidth, height: canvasHeight }}>
+          <canvas
+            ref={canvasRef}
+            width={canvasWidth}
+            height={canvasHeight}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+            className="cursor-crosshair block touch-none"
+          />
+        </div>
       </div>
 
-      <div className="flex gap-2 w-full justify-end">
+      <div className="flex justify-between items-center w-full px-2">
+        <span className="text-[11px] font-bold text-[#8c706e]">
+          💡 แนะนำ: คัดตัวอักษรเรียงจากซ้ายไปขวา (จุได้สูงสุด 12 ตัวอักษร)
+        </span>
         <button
           type="button"
           onClick={clearCanvas}
           className="flex items-center gap-1 px-4 py-1.5 text-xs font-bold text-[#8f4a46] hover:text-[#8e171c] bg-[#ffd0cc]/40 hover:bg-[#ffd0cc]/70 rounded-full transition-all cursor-pointer"
         >
           <span className="material-symbols-outlined text-[16px]">delete</span>
-          ล้างกระดานคัด
+          ล้างสมุดคัด
         </button>
       </div>
     </div>
