@@ -394,23 +394,25 @@ export default function App() {
           fetched.submissions.length === 0;
 
         if (isSheetEmpty) {
+          // ถ้าสเปรดชีตว่างเปล่าจริงๆ (เช่นเพิ่งสร้างใหม่) ค่อยเอาจากในเว็บอัปโหลดขึ้นไป
           mergedStudents = currentLocals.students;
           mergedExams = currentLocals.exams;
           mergedSubmissions = currentLocals.submissions;
           mergedSettings = currentLocals.settings;
         } else {
+          // ✨ ปรับโค้ดตรงนี้: ให้ถือเอา Google Sheets เป็น "ความจริงสูงสุด" 
+          // ถ้าคุณครูลบแถวไหนใน Sheets ออกไป พอซิงค์ปุ๊บ ในเว็บจะถูกลบตามทันที!
           mergedStudents = fetched.students;
           mergedExams = fetched.exams;
+          mergedSubmissions = fetched.submissions; // เปลี่ยนจากเดิมที่เอามาบวกกัน ให้เชื่อตาม Sheets 100%
           mergedSettings = { ...currentLocals.settings, ...fetched.settings };
-
-          const subMap = new Map(currentLocals.submissions.map((s: Submission) => [s.submissionId, s]));
-          fetched.submissions.forEach((s) => subMap.set(s.submissionId, s));
-          mergedSubmissions = Array.from(subMap.values());
         }
       }
 
+      // บันทึกข้อมูลลงบราวเซอร์และ Firestore ตามที่ Sheets กำหนดมา
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
 
+      // เขียนข้อมูลที่ตรงกันกลับไปที่ Sheets อีกครั้งเพื่อความชัวร์
       await syncLocalToSheets(
         token,
         sheetId,
