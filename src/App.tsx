@@ -555,30 +555,41 @@ export default function App() {
     }
   };
 
-// Teacher Logging In (เวอร์ชันอัปเกรดดึงคะแนนจาก Firestore อัตโนมัติเมื่อเข้าหน้าเว็บครู)
-const handleTeacherLoginSuccess = async (email: string, oauthConnected: boolean) => {
-  setTeacherEmail(email);
-  setIsOAuthConnected(oauthConnected);
+// Teacher Logging In (เวอร์ชันอัปเกรดแบบปลอดภัย ไม่ค้างแน่นอน)
+  const handleTeacherLoginSuccess = (email: string, oauthConnected: boolean) => {
+    setTeacherEmail(email);
+    setIsOAuthConnected(oauthConnected);
+    
+    // 1. เปลี่ยนหน้าเข้า Dashboard ของคุณครูทันทีโดยไม่ต้องรอโหลดให้ค้าง
+    setCurrentScreen("teacher_dashboard");
 
-  // 🚀 สั่งดึงข้อมูลคะแนนล่าสุดจาก Firestore มาแสดงผลบนหน้าเว็บทันทีก่อน
-  try {
-    const firestoreData = await pullAllFromFirestore();
-    if (firestoreData) {
-      setStudents(firestoreData.students);
-      setExams(firestoreData.exams);
-      setSubmissions(firestoreData.submissions);
-      if (firestoreData.settings) setSettings(firestoreData.settings);
-      console.log("🔄 ดึงข้อมูลล่าสุดจาก Firestore สำเร็จแล้ว!");
+    // 2. แอบไปดึงข้อมูลล่าสุดจาก Firestore ให้เงียบๆ หลังบ้าน (ถ้ามีฟังก์ชันนี้)
+    try {
+      // ป้องกันการ Error หากชื่อฟังก์ชันไม่ตรงกันในระบบของคุณครู
+      if (typeof pullAllFromFirestore === "function") {
+        pullAllFromFirestore().then((firestoreData) => {
+          if (firestoreData) {
+            setStudents(firestoreData.students);
+            setExams(firestoreData.exams);
+            setSubmissions(firestoreData.submissions);
+            if (firestoreData.settings) setSettings(firestoreData.settings);
+            console.log("🔄 ดึงข้อมูลล่าสุดจาก Firestore สำเร็จแล้ว!");
+          }
+        }).catch((err) => {
+          console.error("Failed to pull from Firestore:", err);
+        });
+      } else {
+        console.log("⚠️ ไม่พบฟังก์ชัน pullAllFromFirestore ในระบบ");
+      }
+    } catch (err) {
+      console.error("Error during background sync:", err);
     }
-  } catch (err) {
-    console.error("Failed to pull from Firestore on login:", err);
-  }
 
-  setCurrentScreen("teacher_dashboard");
-  if (oauthConnected) {
-    handleFullSync();
-  }
-};
+    // 3. ทำการซิงค์ข้อมูลสเปรดชีตหลัก
+    if (oauthConnected) {
+      handleFullSync();
+    }
+  };
 
   // Teacher Logging Out
   const handleTeacherLogout = async () => {
