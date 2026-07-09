@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Submission, SystemSettings, SyncStatus } from "./types";
 import {
   DEFAULT_STUDENTS,
@@ -80,6 +80,9 @@ export default function App() {
   const [isLoadingPublicData, setIsLoadingPublicData] = useState(false);
   const [publicDataError, setPublicDataError] = useState<string | null>(null);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
+
+  // ✨ ตัวล็อกระบบป้องกันการกดปุ่มส่งข้อสอบรัวเบิ้ลพร้อมกันในเสี้ยววินาที
+  const isSubmittingRef = useRef(false);
 
   const loadPublicData = async (sheetId: string) => {
     const cleanSheetId = extractSpreadsheetId(sheetId);
@@ -302,7 +305,7 @@ export default function App() {
   };
 
   // 3. Google Drive / Sheets Synchronizer and State Pushing
-const pushStateToSheets = async (
+  const pushStateToSheets = async (
     updatedStudents?: Student[],
     updatedExams?: Exam[],
     updatedSubmissions?: Submission[],
@@ -488,13 +491,29 @@ const pushStateToSheets = async (
     }
   };
 
-  // Student Submitting Exam
+  // ✨ ฟังก์ชันรับคำตอบนักเรียนเวอร์ชันล็อกปุ่มรัว แต่อะลุ้มอล่วยสิทธิ์การจับทุจริตแบบเดิม
   const handleExamSubmitted = async (submission: Submission) => {
-    const nextSubmissions = [submission, ...submissions];
-    // เรียกใช้งานฟังก์ชันพุชข้อมูลขึ้น Google Sheets ที่อัปเดตใหม่
-    await pushStateToSheets(undefined, undefined, nextSubmissions);
-    setLatestSubmission(submission);
-    setCurrentScreen("student_success");
+    // 🛑 ถ้าระบบกำลังอัปโหลดข้อมูลของเสี้ยววินาทีนี้อยู่ ให้สกัดทิ้งทันที คะแนนจะไม่บันทึกซ้ำซ้อน
+    if (isSubmittingRef.current) {
+      console.log("⚠️ บล็อกการกดส่งซ้ำซ้อนในเสี้ยววินาทีสำเร็จ");
+      return;
+    }
+    
+    // ล็อกระบบป้องกันการส่งเบิ้ล
+    isSubmittingRef.current = true;
+
+    try {
+      const nextSubmissions = [submission, ...submissions];
+      // เรียกใช้งานฟังก์ชันพุชข้อมูลขึ้น Google Sheets ที่อัปเดตใหม่
+      await pushStateToSheets(undefined, undefined, nextSubmissions);
+      setLatestSubmission(submission);
+      setCurrentScreen("student_success");
+    } catch (error) {
+      console.error("Submission failed:", error);
+    } finally {
+      // 🔓 เมื่อข้อมูลยิงเข้า Google Sheets และเปลี่ยนหน้าจอผ่านแล้ว ค่อยปลดล็อกให้เปิดรับคำตอบรอบถัดไป
+      isSubmittingRef.current = false;
+    }
   };
 
   // Manual Trigger Google Sheet authentication popup
