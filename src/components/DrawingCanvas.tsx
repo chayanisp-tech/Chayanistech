@@ -25,7 +25,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Use standard high-DPI canvas scaling
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * 2;
     canvas.height = rect.height * 2;
@@ -39,7 +38,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     context.lineJoin = "round";
     contextRef.current = context;
 
-    // If an existing drawing exists, render it on the canvas
     if (value) {
       const img = new Image();
       img.referrerPolicy = "no-referrer";
@@ -49,12 +47,10 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
         context.drawImage(img, 0, 0, rect.width, rect.height);
       };
     } else {
-      // Clear with white background or keep transparent
       context.clearRect(0, 0, rect.width, rect.height);
     }
   }, []);
 
-  // Handle ResizeObserver to maintain drawing on resize
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -64,7 +60,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
         const { width, height } = entry.contentRect;
         if (width === 0 || height === 0) return;
 
-        // Save current drawing content
         const currentData = canvas.toDataURL();
 
         canvas.width = width * 2;
@@ -79,7 +74,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
           context.lineJoin = "round";
           contextRef.current = context;
 
-          // Re-draw saved content
           const img = new Image();
           img.referrerPolicy = "no-referrer";
           img.src = currentData;
@@ -115,7 +109,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    // Prevent scrolling when drawing on mobile touch screens
     if (e.cancelable) e.preventDefault();
 
     const { x, y } = getCoordinates(e);
@@ -125,9 +118,8 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     context.beginPath();
     context.moveTo(x, y);
     context.strokeStyle = tool === "eraser" ? "#ffffff" : color;
-    context.lineWidth = tool === "eraser" ? brushSize * 3 : brushSize;
+    context.lineWidth = tool === "eraser" ? brushSize * 4 : brushSize;
     
-    // Draw a single dot on click/tap
     context.lineTo(x, y);
     context.stroke();
 
@@ -154,7 +146,6 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
     }
     setIsDrawing(false);
 
-    // Save image state
     const canvas = canvasRef.current;
     if (canvas) {
       onChange(canvas.toDataURL());
@@ -173,70 +164,77 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
 
   return (
     <div className="flex flex-col space-y-3 bg-[#fffaf9] p-4 rounded-2xl border border-[#e0bfbc]/50 shadow-inner">
-      {/* Tools bar */}
+      
+      {/* 🎨 Tools bar ดีไซน์ใหม่ มั่นคง ไม่โดนตัวหนังสือทับถมแน่นอน */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e0bfbc]/30 pb-3">
-        {/* Color pickers */}
-        <div className="flex items-center gap-2">
-          {colors.map((c) => (
-            <button
-              key={c.hex}
-              type="button"
-              onClick={() => {
-                setColor(c.hex);
-                setTool("pen");
-              }}
-              style={{ backgroundColor: c.hex }}
-              className={`w-7 h-7 rounded-full border transition-all cursor-pointer flex items-center justify-center ${
-                color === c.hex && tool === "pen"
-                  ? "ring-2 ring-offset-2 ring-[#8e171c] scale-110"
-                  : "border-[#e0bfbc]/60 hover:scale-105"
-              }`}
-              title={c.name}
-            >
-              {color === c.hex && tool === "pen" && (
-                <span className="material-symbols-outlined text-white text-[14px]">check</span>
-              )}
-            </button>
-          ))}
+        
+        {/* ฝั่งซ้าย: ตัวเลือกสี และ ปุ่มสลับยางลบ */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-full border border-[#e0bfbc]/30 shadow-sm">
+            {colors.map((c) => (
+              <button
+                key={c.hex}
+                type="button"
+                onClick={() => {
+                  setColor(c.hex);
+                  setTool("pen");
+                }}
+                style={{ backgroundColor: c.hex }}
+                className={`w-7 h-7 rounded-full border transition-all cursor-pointer flex items-center justify-center relative ${
+                  color === c.hex && tool === "pen"
+                    ? "ring-2 ring-offset-1 ring-[#8e171c] scale-110 z-10"
+                    : "border-gray-200 opacity-80 hover:opacity-100 hover:scale-105"
+                }`}
+                title={c.name}
+              >
+                {color === c.hex && tool === "pen" && (
+                  <span className="text-white text-xs font-bold">✓</span>
+                )}
+              </button>
+            ))}
+          </div>
 
-          {/* Eraser Button */}
+          {/* ปุ่มยางลบดีไซน์ใช้ Text+SVG เล็กๆ กันไอคอนพัง */}
           <button
             type="button"
-            onClick={() => setTool("eraser")}
-            className={`w-7 h-7 rounded-full border flex items-center justify-center cursor-pointer transition-all ${
+            onClick={() => setTool(tool === "eraser" ? "pen" : "eraser")}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               tool === "eraser"
-                ? "bg-[#8e171c] text-white ring-2 ring-offset-2 ring-[#8e171c]"
+                ? "bg-[#8e171c] text-white border-[#8e171c] shadow-md scale-105"
                 : "bg-white text-[#59413f] border-[#e0bfbc] hover:bg-[#fff1f0]"
             }`}
-            title="ยางลบ"
+            title="สลับใช้ยางลบ"
           >
-            <span className="material-symbols-outlined text-[16px]">auto_eraser</span>
+            <span>🧹</span>
+            <span>{tool === "eraser" ? "กำลังลบ" : "ยางลบ"}</span>
           </button>
         </div>
 
-        {/* Brush Size Slider */}
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-[16px] text-[#59413f]">brush</span>
-          <input
-            type="range"
-            min="2"
-            max="16"
-            value={brushSize}
-            onChange={(e) => setBrushSize(Number(e.target.value))}
-            className="w-20 md:w-28 accent-[#8e171c]"
-          />
-          <span className="text-[10px] font-bold text-[#8c706e] w-4">{brushSize}px</span>
-        </div>
+        {/* ฝั่งขวา: ปรับขนาดพู่กัน และ ปุ่มล้างกระดาน */}
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* แถบปรับขนาดหัวดินสอ */}
+          <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-lg border border-[#e0bfbc]/30">
+            <span className="text-xs text-[#59413f] font-medium">ขนาด:</span>
+            <input
+              type="range"
+              min="2"
+              max="16"
+              value={brushSize}
+              onChange={(e) => setBrushSize(Number(e.target.value))}
+              className="w-16 md:w-24 accent-[#8e171c] cursor-pointer"
+            />
+            <span className="text-[10px] font-bold text-[#8c706e] min-w-[24px] text-right">{brushSize}px</span>
+          </div>
 
-        {/* Action Button */}
-        <button
-          type="button"
-          onClick={clearCanvas}
-          className="px-3 py-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
-        >
-          <span className="material-symbols-outlined text-[14px]">delete</span>
-          ล้างกระดานวาดเขียน
-        </button>
+          {/* ปุ่มรีเซ็ตกระดาน */}
+          <button
+            type="button"
+            onClick={clearCanvas}
+            className="px-3 py-1.5 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            🗑️ ล้างกระดาน
+          </button>
+        </div>
       </div>
 
       {/* HTML5 Canvas Area */}
