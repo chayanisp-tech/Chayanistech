@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Submission, SyncStatus, Exam, Question } from "../types";
+import { Submission, SyncStatus, Exam, Question, Student } from "../types";
 
 interface TeacherGradingProps {
   submissions: Submission[];
   exams: Exam[];
+  students: Student[];
   onDeleteSubmission: (id: string) => void;
   onUpdateSubmission: (submission: Submission) => void;
   syncStatus: SyncStatus;
@@ -13,21 +14,51 @@ interface TeacherGradingProps {
 export default function TeacherGrading({
   submissions,
   exams,
+  students,
   onDeleteSubmission,
   onUpdateSubmission,
   syncStatus,
   onTriggerSync,
 }: TeacherGradingProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClassroom, setSelectedClassroom] = useState("all");
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
 
+  // Extract unique classrooms
+  const classrooms = Array.from(new Set(students.map((s) => s.className))).filter(Boolean).sort();
+
   const filtered = submissions.filter(
-    (s) =>
-      s.studentId.includes(searchTerm) ||
-      s.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.examTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.submissionId.includes(searchTerm)
+    (s) => {
+      const matchSearch =
+        s.studentId.includes(searchTerm) ||
+        s.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.examTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.submissionId.includes(searchTerm);
+      
+      const matchClass = selectedClassroom === "all" || s.studentClassName === selectedClassroom;
+      
+      return matchSearch && matchClass;
+    }
   );
+
+  // Sort: First by classroom (if all), then by database order
+  const sortedSubmissions = [...filtered].sort((a, b) => {
+    if (selectedClassroom === "all") {
+      const classCompare = a.studentClassName.localeCompare(b.studentClassName, "th-TH");
+      if (classCompare !== 0) return classCompare;
+    }
+
+    const idxA = students.findIndex((s) => s.id === a.studentId);
+    const idxB = students.findIndex((s) => s.id === b.studentId);
+
+    if (idxA !== -1 && idxB !== -1) {
+      return idxA - idxB;
+    }
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+
+    return a.studentName.localeCompare(b.studentName, "th-TH");
+  });
 
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
@@ -100,18 +131,39 @@ export default function TeacherGrading({
 
       {/* Main Table Grid */}
       <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm">
-        {/* Search Filter */}
-        <div className="flex items-center gap-3 mb-6 relative max-w-md">
-          <span className="material-symbols-outlined absolute left-4 text-[#8c706e] text-[18px]">
-            search
-          </span>
-          <input
-            type="text"
-            placeholder="ค้นหาด้วยรหัสนักเรียน, ชื่อ หรือวิชาที่สอบ..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-2.5 rounded-full border border-[#e0bfbc] outline-none text-sm text-[#251817] focus:border-[#8e171c]"
-          />
+        {/* Search & Classroom Filters */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
+          <div className="flex items-center gap-3 relative w-full sm:max-w-md">
+            <span className="material-symbols-outlined absolute left-4 text-[#8c706e] text-[18px]">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder="ค้นหาด้วยรหัสนักเรียน, ชื่อ หรือวิชาที่สอบ..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-11 pr-4 py-2.5 rounded-full border border-[#e0bfbc] outline-none text-sm text-[#251817] focus:border-[#8e171c]"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <label htmlFor="classSelect" className="text-xs font-bold text-[#59413f] whitespace-nowrap">
+              แยกตามห้องเรียน:
+            </label>
+            <select
+              id="classSelect"
+              value={selectedClassroom}
+              onChange={(e) => setSelectedClassroom(e.target.value)}
+              className="px-4 py-2 border border-[#e0bfbc] rounded-full text-xs font-bold bg-[#fff8f7] text-[#8e171c] outline-none focus:border-[#8e171c] cursor-pointer"
+            >
+              <option value="all">แสดงทั้งหมด (เรียงตามห้อง)</option>
+              {classrooms.map((c) => (
+                <option key={c} value={c}>
+                  ห้อง {c}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Scores Table */}
@@ -130,14 +182,14 @@ export default function TeacherGrading({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e0bfbc]/20">
-              {filtered.length === 0 ? (
+              {sortedSubmissions.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-[#59413f]">
                     ยังไม่มีรายงานการทำข้อสอบตามตัวกรองนี้
                   </td>
                 </tr>
               ) : (
-                filtered.map((sub) => {
+                sortedSubmissions.map((sub) => {
                   const isPerfect = sub.score === sub.totalPoints;
                   const isExpanded = expandedSubmissionId === sub.submissionId;
                   const matchingExam = exams.find((e) => e.id === sub.examId);
@@ -248,6 +300,11 @@ export default function TeacherGrading({
                                               )}
                                             </div>
                                             <p className="font-bold text-[#251817] text-xs md:text-sm">{q.text}</p>
+                                            {q.imageUrl && (
+                                              <div className="my-2 max-w-[150px] border border-[#e0bfbc] rounded-lg overflow-hidden bg-white">
+                                                <img src={q.imageUrl} alt="คำถามภาพประกอบ" className="w-full object-cover max-h-[100px]" referrerPolicy="no-referrer" />
+                                              </div>
+                                            )}
                                           </div>
                                           <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full shrink-0">
                                             {q.points} คะแนน

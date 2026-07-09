@@ -1,15 +1,17 @@
 import React, { useState } from "react";
-import { Student, Submission } from "../types";
+import { Student, Submission, Exam } from "../types";
 
 interface StudentScoreLookupProps {
   students: Student[];
   submissions: Submission[];
+  exams: Exam[];
   onGoBack: () => void;
 }
 
 export default function StudentScoreLookup({
   students,
   submissions,
+  exams,
   onGoBack,
 }: StudentScoreLookupProps) {
   const [studentId, setStudentId] = useState("");
@@ -152,32 +154,92 @@ export default function StudentScoreLookup({
                 ) : (
                   <div className="space-y-4">
                     {results.map((sub) => {
+                      const subExam = exams.find((e) => e.id === sub.examId);
+                      
+                      let totalChoiceCount = 0;
+                      let totalChoicePoints = 0;
+                      let earnedChoicePoints = 0;
+
+                      let totalSubjectiveCount = 0;
+                      let totalSubjectivePoints = 0;
+                      let gradedSubjectivePoints = 0;
+                      let isGraded = true; // By default, if no subjective questions, it is fully graded
+
+                      if (subExam) {
+                        subExam.questions.forEach((q) => {
+                          const studentAns = sub.answers[q.id];
+                          if (q.type === "subjective") {
+                            totalSubjectiveCount++;
+                            totalSubjectivePoints += q.points;
+                            if (studentAns && typeof studentAns.assignedScore === "number") {
+                              gradedSubjectivePoints += studentAns.assignedScore;
+                            } else {
+                              isGraded = false;
+                            }
+                          } else {
+                            totalChoiceCount++;
+                            totalChoicePoints += q.points;
+                            if (studentAns !== undefined && studentAns === q.answerIndex) {
+                              earnedChoicePoints += q.points;
+                            }
+                          }
+                        });
+                      }
+
                       const isPerfect = sub.score === sub.totalPoints;
                       return (
                         <div
                           key={sub.submissionId}
-                          className="bg-white border border-[#e0bfbc]/50 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                          className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6"
                         >
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-[#8c706e] font-semibold">
+                          <div className="space-y-2 flex-grow">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] text-[#8c706e] font-bold uppercase tracking-wider bg-[#fff0ef] border border-[#e0bfbc]/30 px-2 py-0.5 rounded-full">
                                 ID: {sub.submissionId}
                               </span>
-                              <span className="text-xs bg-[#ffe9e7] text-[#8e171c] font-bold px-2 py-0.5 rounded-full">
+                              {totalSubjectiveCount > 0 && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  isGraded 
+                                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700" 
+                                    : "bg-amber-50 border border-amber-200 text-amber-700 animate-pulse"
+                                }`}>
+                                  {isGraded ? "ตรวจอัตนัยเสร็จแล้ว" : "รอคุณครูตรวจอัตนัย"}
+                                </span>
+                              )}
+                              <span className="text-[10px] bg-[#ffe9e7] text-[#8e171c] font-black px-2 py-0.5 rounded-full border border-[#8e171c]/15">
                                 {sub.status}
                               </span>
                             </div>
-                            <h5 className="font-bold text-[#251817] text-lg">{sub.examTitle}</h5>
-                            <p className="text-xs text-[#8c706e]">
+                            <h5 className="font-bold text-[#251817] text-lg leading-snug">{sub.examTitle}</h5>
+                            
+                            {/* Breakdown */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                              {totalChoiceCount > 0 && (
+                                <div className="text-xs bg-[#fff8f7] border border-[#e0bfbc]/30 rounded-xl p-2.5">
+                                  <span className="text-[#8c706e] font-semibold block mb-0.5">ส่วนปรนัย:</span>
+                                  <span className="font-bold text-[#8e171c]">{earnedChoicePoints} / {totalChoicePoints} คะแนน</span>
+                                </div>
+                              )}
+                              {totalSubjectiveCount > 0 && (
+                                <div className="text-xs bg-[#fff8f7] border border-[#e0bfbc]/30 rounded-xl p-2.5">
+                                  <span className="text-[#8c706e] font-semibold block mb-0.5">ส่วนอัตนัย:</span>
+                                  <span className="font-bold text-[#8e171c]">
+                                    {isGraded ? `${gradedSubjectivePoints} / ${totalSubjectivePoints} คะแนน` : `รอตรวจ (${totalSubjectivePoints} คะแนน)`}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <p className="text-[11px] text-[#8c706e] pt-1">
                               ส่งเมื่อ: {new Date(sub.submittedAt).toLocaleString("th-TH")}
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-4 border-t sm:border-t-0 pt-4 sm:pt-0 border-[#e0bfbc]/20 justify-between">
-                            <div className="text-right sm:text-left">
-                              <span className="text-[11px] text-[#8c706e] block uppercase font-bold">ผลคะแนน</span>
-                              <span className={`text-2xl font-black ${isPerfect ? "text-[#8e171c]" : "text-[#8f4a46]"}`}>
-                                {sub.score} <span className="text-sm font-semibold text-[#8c706e]">/ {sub.totalPoints} คะแนน</span>
+                          <div className="flex items-center gap-4 border-t sm:border-t-0 pt-4 sm:pt-0 border-[#e0bfbc]/20 justify-between shrink-0">
+                            <div className="text-right">
+                              <span className="text-[10px] text-[#8c706e] block uppercase font-bold tracking-wider mb-1">คะแนนรวมทั้งหมด</span>
+                              <span className={`text-3xl font-black ${isPerfect ? "text-[#8e171c]" : "text-[#8f4a46]"}`}>
+                                {sub.score} <span className="text-xs font-semibold text-[#8c706e]">/ {sub.totalPoints} คะแนน</span>
                               </span>
                             </div>
                           </div>

@@ -319,6 +319,7 @@ export default function TeacherDashboard({
             <TeacherGrading
               submissions={submissions}
               exams={exams}
+              students={students}
               onDeleteSubmission={onDeleteSubmission}
               onUpdateSubmission={onUpdateSubmission}
               syncStatus={syncStatus}

@@ -482,9 +482,21 @@ export default function StudentExamRoom({
               </div>
 
               {/* Question Text */}
-              <h2 className="text-xl md:text-2xl font-bold text-[#251817] mb-8 leading-relaxed">
+              <h2 className="text-xl md:text-2xl font-bold text-[#251817] mb-6 leading-relaxed">
                 {currentQuestion.text}
               </h2>
+
+              {/* Question Image if exists */}
+              {currentQuestion.imageUrl && (
+                <div className="mb-8 flex justify-center bg-[#fff8f7] border border-[#e0bfbc]/30 p-4 rounded-3xl overflow-hidden max-w-full">
+                  <img
+                    src={currentQuestion.imageUrl}
+                    alt="ภาพประกอบข้อสอบ"
+                    className="max-h-[350px] object-contain rounded-2xl shadow-sm border border-white"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              )}
 
               {/* Option Choices or Subjective Text/Drawing input */}
               {currentQuestion.type === "subjective" ? (

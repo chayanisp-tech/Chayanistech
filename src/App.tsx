@@ -576,6 +576,7 @@ export default function App() {
       {currentScreen === "student_success" && latestSubmission && (
         <ExamSuccess
           submission={latestSubmission}
+          exams={exams}
           onGoHome={() => {
             setCurrentStudent(null);
             setLatestSubmission(null);
@@ -592,6 +593,7 @@ export default function App() {
         <StudentScoreLookup
           students={students}
           submissions={submissions}
+          exams={exams}
           onGoBack={() => {
             setCurrentStudent(null);
             setLatestSubmission(null);

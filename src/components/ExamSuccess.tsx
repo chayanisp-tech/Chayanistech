@@ -1,16 +1,42 @@
-import { Submission } from "../types";
+import { Submission, Exam } from "../types";
 
 interface ExamSuccessProps {
   submission: Submission;
+  exams: Exam[];
   onGoHome: () => void;
   onCheckStatus: () => void;
 }
 
 export default function ExamSuccess({
   submission,
+  exams,
   onGoHome,
   onCheckStatus,
 }: ExamSuccessProps) {
+  const exam = exams.find((e) => e.id === submission.examId);
+
+  let totalChoiceCount = 0;
+  let totalChoicePoints = 0;
+  let earnedChoicePoints = 0;
+
+  let totalSubjectiveCount = 0;
+  let totalSubjectivePoints = 0;
+
+  if (exam) {
+    exam.questions.forEach((q) => {
+      const studentAns = submission.answers[q.id];
+      if (q.type === "subjective") {
+        totalSubjectiveCount++;
+        totalSubjectivePoints += q.points;
+      } else {
+        totalChoiceCount++;
+        totalChoicePoints += q.points;
+        if (studentAns !== undefined && studentAns === q.answerIndex) {
+          earnedChoicePoints += q.points;
+        }
+      }
+    });
+  }
   // Format submission date/time
   const formattedTime = () => {
     try {
@@ -100,6 +126,65 @@ export default function ExamSuccess({
             <span className="text-lg font-bold">{submission.status === "ทุจริต" ? "พยายามทุจริต" : "สมบูรณ์"}</span>
           </div>
         </div>
+
+        {/* Score and Auto-Grading Cards */}
+        {submission.status !== "ทุจริต" && (
+          <div className="bg-white border border-[#e0bfbc]/60 rounded-3xl p-6 md:p-8 shadow-sm w-full max-w-3xl mb-6 text-left space-y-6">
+            <h3 className="text-xl font-bold text-[#251817] flex items-center gap-2 border-b border-[#e0bfbc]/30 pb-3">
+              <span className="material-symbols-outlined text-[#8e171c]">summarize</span>
+              <span>ผลคะแนนและสถานะคำตอบรายส่วน</span>
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Choice Section */}
+              <div className="bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#2b6a2b] bg-[#eaf5ea] p-1.5 rounded-xl text-[20px]">task_alt</span>
+                  <div>
+                    <h4 className="font-bold text-[#251817] text-sm">คะแนนส่วนปรนัย (หลายตัวเลือก)</h4>
+                    <p className="text-[11px] text-[#8c706e] font-semibold">ตรวจคำตอบและคิดคะแนนให้ทันที</p>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  {totalChoiceCount > 0 ? (
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-black text-[#8e171c]">{earnedChoicePoints}</span>
+                      <span className="text-sm font-bold text-[#8c706e]">/ {totalChoicePoints} คะแนน</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#59413f] italic">ไม่มีข้อสอบส่วนปรนัย</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Subjective Section */}
+              <div className="bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#8e171c] bg-[#ffe9e7] p-1.5 rounded-xl text-[20px]">hourglass_empty</span>
+                  <div>
+                    <h4 className="font-bold text-[#251817] text-sm">คะแนนส่วนข้อเขียน (อัตนัย)</h4>
+                    <p className="text-[11px] text-[#8c706e] font-semibold">รอคุณครูผู้สอนตรวจและให้คะแนน</p>
+                  </div>
+                </div>
+                <div className="pt-2 flex items-center justify-between">
+                  {totalSubjectiveCount > 0 ? (
+                    <>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-xs font-bold text-[#8c706e]">มีจำนวนข้อเขียน:</span>
+                        <span className="text-xl font-black text-[#8e171c]">{totalSubjectiveCount} ข้อ</span>
+                      </div>
+                      <span className="px-3 py-1 bg-[#ffe9e7] text-[#8e171c] rounded-full text-[10px] font-black border border-[#e0bfbc]/30 uppercase tracking-wider animate-pulse">
+                        รอคุณครูตรวจ
+                      </span>
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#2b6a2b] font-bold">ไม่มีข้อสอบส่วนอัตนัย (ตรวจเสร็จครบถ้วน!)</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Small Data Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl mb-12">
