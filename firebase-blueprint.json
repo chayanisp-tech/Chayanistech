@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Student record allowed to take exams",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique student identifier (5 digits)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the student"
+        },
+        "className": {
+          "type": "string",
+          "description": "Classroom or section name"
+        }
+      },
+      "required": ["id", "name", "className"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Individual exam question",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "options": { "type": "array" },
+        "answerIndex": { "type": "integer" },
+        "points": { "type": "number" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "text", "options", "answerIndex", "points"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Exam definition designed by teachers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "courseCode": { "type": "string" },
+        "description": { "type": "string" },
+        "questions": { "type": "array" },
+        "timeLimitMinutes": { "type": "integer" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "title", "courseCode", "questions", "timeLimitMinutes", "isActive"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Exam submission completed by student",
+      "type": "object",
+      "properties": {
+        "submissionId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClassName": { "type": "string" },
+        "examId": { "type": "string" },
+        "examTitle": { "type": "string" },
+        "score": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "answeredCount": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["สมบูรณ์", "ไม่สมบูรณ์", "ทุจริต"] },
+        "answers": { "type": "object" }
+      },
+      "required": ["submissionId", "studentId", "examId", "score", "totalQuestions", "submittedAt", "status"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Global teacher settings and configuration",
+      "type": "object",
+      "properties": {
+        "teacherName": { "type": "string" },
+        "teacherEmail": { "type": "string" },
+        "role": { "type": "string" },
+        "lockdown": { "type": "boolean" },
+        "ipWhitelist": { "type": "boolean" },
+        "aiProctor": { "type": "boolean" },
+        "plagiarismCheck": { "type": "boolean" },
+        "timezone": { "type": "string" },
+        "startDuration": { "type": "integer" }
+      },
+      "required": ["teacherName", "teacherEmail", "lockdown"]
+    }
+  },
+  "firestore": {
+    "/exams/{examId}": {
+      "schema": "Exam",
+      "description": "Exams collection"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student registry collection"
+    },
+    "/settings/global": {
+      "schema": "SystemSettings",
+      "description": "Global settings document"
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Submissions completed by students"
+    }
+  }
+}
