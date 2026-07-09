@@ -40,6 +40,18 @@ type Screen =
   | "teacher_login"
   | "teacher_dashboard";
 
+// ฟังก์ชันพิเศษสำหรับแกะรหัส ID จาก URL ของ Google Sheets ทั้งแบบสั้นและแบบยาว
+const extractSpreadsheetId = (urlOrId: string | null): string | null => {
+  if (!urlOrId) return null;
+  // ถ้ายื่นมาเป็น URL ยาว เช่น https://docs.google.com/spreadsheets/d/1XYZ.../edit
+  const matches = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (matches && matches[1]) {
+    return matches[1];
+  }
+  // ถ้าไม่ใช่ URL ยาว ให้มองว่าเป็น ID ตรงๆ ตัว
+  return urlOrId.trim();
+};
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("student_welcome");
 
@@ -70,10 +82,13 @@ export default function App() {
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
 
   const loadPublicData = async (sheetId: string) => {
+    const cleanSheetId = extractSpreadsheetId(sheetId);
+    if (!cleanSheetId) return false;
+
     setIsLoadingPublicData(true);
     setPublicDataError(null);
     try {
-      const fetched = await fetchPublicSheetsData(sheetId);
+      const fetched = await fetchPublicSheetsData(cleanSheetId);
       if (fetched) {
         if (fetched.students.length > 0) {
           setStudents(fetched.students);
@@ -90,15 +105,15 @@ export default function App() {
         }
         // Update local sync status
         const updatedSync: SyncStatus = {
-          spreadsheetId: sheetId,
-          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${sheetId}/edit`,
+          spreadsheetId: cleanSheetId,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
           lastSyncedAt: new Date().toISOString(),
           isSyncing: false,
           error: null,
         };
         setSyncStatus(updatedSync);
         localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
-        setActiveSheetId(sheetId);
+        setActiveSheetId(cleanSheetId);
         return true;
       } else {
         setPublicDataError(
@@ -190,12 +205,16 @@ export default function App() {
       }
     }
 
-    // Check for sheetId in URL parameters
+    // แก้ไขจุดที่ 1: ดึงค่าจากพารามิเตอร์แล้วนำไปสกัดหาไอดีที่ถูกต้องทันที รองรับทั้งลิงก์สั้นและยาว
     const urlParams = new URLSearchParams(window.location.search);
     const sheetIdParam = urlParams.get("sheetId");
+    
     if (sheetIdParam) {
-      localStorage.setItem("student_active_sheet_id", sheetIdParam);
-      loadPublicData(sheetIdParam);
+      const cleanId = extractSpreadsheetId(sheetIdParam);
+      if (cleanId) {
+        localStorage.setItem("student_active_sheet_id", cleanId);
+        loadPublicData(cleanId);
+      }
     } else {
       const savedSheetId = localStorage.getItem("student_active_sheet_id");
       if (savedSheetId) {
@@ -215,7 +234,6 @@ export default function App() {
           const { students: fStudents, exams: fExams, submissions: fSubmissions, settings: fSettings } = firestoreData;
           
           if (fExams.length > 0) {
-            // Firestore is already seeded! Load everything from Firestore.
             setExams(fExams);
             localStorage.setItem("exam_exams", JSON.stringify(fExams));
             
@@ -231,9 +249,7 @@ export default function App() {
             }
             console.log("Successfully synchronized and loaded all data from Firestore!");
           } else {
-            // Firestore is empty. Let's seed it with default data so it works immediately!
             console.log("Firestore database is empty. Seeding with default data...");
-            // Use current local or default data
             const currentStudents = JSON.parse(localStorage.getItem("exam_students") || "[]");
             const currentExams = JSON.parse(localStorage.getItem("exam_exams") || "[]");
             const currentSubmissions = JSON.parse(localStorage.getItem("exam_submissions") || "[]");
@@ -292,41 +308,41 @@ export default function App() {
     updatedSubmissions?: Submission[],
     updatedSettings?: SystemSettings
   ) => {
-    // First, save immediately to local state and localStorage
+    // Save locally first
     saveStateToLocal(updatedStudents, updatedExams, updatedSubmissions, updatedSettings);
 
-    // If connected to Google, push the updated state directly to Google Sheets without fetching first
-    if (isOAuthConnected) {
-      const token = getAccessToken();
-      const sheetId = syncStatus.spreadsheetId;
-      if (token && sheetId) {
-        try {
-          const studentsToSync = updatedStudents !== undefined ? updatedStudents : JSON.parse(localStorage.getItem("exam_students") || "[]");
-          const examsToSync = updatedExams !== undefined ? updatedExams : JSON.parse(localStorage.getItem("exam_exams") || "[]");
-          const submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : JSON.parse(localStorage.getItem("exam_submissions") || "[]");
-          const settingsToSync = updatedSettings !== undefined ? updatedSettings : JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS));
+    // แก้ไขจุดที่ 2: ปรับปรุงให้ถ้านักเรียนส่งคำตอบเข้ามา และแอปมีเป้าหมาย activeSheetId อยู่ ให้ยิงคะแนนเข้า Google Sheet ของลิงก์นั้นทันที (ไม่ต้องพึ่งสิทธิ์คุณครูเปิดห้อง)
+    const targetSheetId = syncStatus.spreadsheetId || activeSheetId;
+    const token = getAccessToken();
 
-          await syncLocalToSheets(
-            token,
-            sheetId,
-            studentsToSync,
-            examsToSync,
-            submissionsToSync,
-            settingsToSync
-          );
+    if (token && targetSheetId) {
+      try {
+        const studentsToSync = updatedStudents !== undefined ? updatedStudents : JSON.parse(localStorage.getItem("exam_students") || "[]");
+        const examsToSync = updatedExams !== undefined ? updatedExams : JSON.parse(localStorage.getItem("exam_exams") || "[]");
+        const submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : JSON.parse(localStorage.getItem("exam_submissions") || "[]");
+        const settingsToSync = updatedSettings !== undefined ? updatedSettings : JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS));
 
-          // Update last sync time
-          const nextSync: SyncStatus = {
-            ...syncStatus,
-            lastSyncedAt: new Date().toISOString(),
-            isSyncing: false,
-            error: null,
-          };
-          setSyncStatus(nextSync);
-          localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
-        } catch (err: any) {
-          console.error("Direct push to Google Sheets failed:", err);
-        }
+        await syncLocalToSheets(
+          token,
+          targetSheetId,
+          studentsToSync,
+          examsToSync,
+          submissionsToSync,
+          settingsToSync
+        );
+
+        const nextSync: SyncStatus = {
+          ...syncStatus,
+          spreadsheetId: targetSheetId,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${targetSheetId}/edit`,
+          lastSyncedAt: new Date().toISOString(),
+          isSyncing: false,
+          error: null,
+        };
+        setSyncStatus(nextSync);
+        localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
+      } catch (err: any) {
+        console.error("Direct push to Google Sheets failed:", err);
       }
     }
   };
@@ -341,7 +357,6 @@ export default function App() {
     setSyncStatus((prev) => ({ ...prev, isSyncing: true, error: null }));
 
     try {
-      // Step A: Search for the spreadsheet
       let sheetId = syncStatus.spreadsheetId;
       let sheetUrl = syncStatus.spreadsheetUrl;
 
@@ -349,7 +364,6 @@ export default function App() {
         sheetId = await searchDatabaseSpreadsheet(token);
       }
 
-      // Step B: Create if missing
       if (!sheetId) {
         const createResult = await createDatabaseSpreadsheet(token);
         sheetId = createResult.spreadsheetId;
@@ -360,7 +374,6 @@ export default function App() {
         throw new Error("ล้มเหลวในการดึงข้อมูลหรือจัดสร้างสเปรดชีต");
       }
 
-      // Read current localStorage values
       const currentLocals = {
         students: JSON.parse(localStorage.getItem("exam_students") || "[]"),
         exams: JSON.parse(localStorage.getItem("exam_exams") || "[]"),
@@ -368,7 +381,6 @@ export default function App() {
         settings: JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)),
       };
 
-      // Step C: Try to fetch sheet data first to merge (if sheet existed and has data)
       const fetched = await fetchFromSheets(token, sheetId);
       let mergedStudents = currentLocals.students;
       let mergedExams = currentLocals.exams;
@@ -382,30 +394,23 @@ export default function App() {
           fetched.submissions.length === 0;
 
         if (isSheetEmpty) {
-          // Spreadsheet is empty / newly initialized. We push browser's local state to Google Sheets.
           mergedStudents = currentLocals.students;
           mergedExams = currentLocals.exams;
           mergedSubmissions = currentLocals.submissions;
           mergedSettings = currentLocals.settings;
         } else {
-          // Spreadsheet has records. We treat Google Sheets as the absolute source of truth for
-          // Students, Exams and Settings (allowing direct additions/deletions in Sheets to sync down to the browser).
-          // Submissions are merged additively so no scores are ever lost.
           mergedStudents = fetched.students;
           mergedExams = fetched.exams;
           mergedSettings = { ...currentLocals.settings, ...fetched.settings };
 
-          // Additive merge for submissions (always secure)
           const subMap = new Map(currentLocals.submissions.map((s: Submission) => [s.submissionId, s]));
           fetched.submissions.forEach((s) => subMap.set(s.submissionId, s));
           mergedSubmissions = Array.from(subMap.values());
         }
       }
 
-      // Update states and local storage with the merged items
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
 
-      // Step D: Write clean merged state back to Sheets
       await syncLocalToSheets(
         token,
         sheetId,
@@ -436,9 +441,8 @@ export default function App() {
       
       if (isAuthError) {
         userFriendlyError = "เซสชัน Google Sheets หมดอายุหรือไม่ได้เปิดสิทธิ์กรุณากดคลิกปุ่ม 'เชื่อมโยง Google Drive & Sheets' อีกครั้งเพื่อต่ออายุและยืนยันสิทธิ์";
-        // Disconnect the session status so user is prompted to reconnect
         setIsOAuthConnected(false);
-        logout(); // clear internal credentials & localStorage
+        logout();
       }
 
       const nextSync: SyncStatus = {
@@ -457,7 +461,6 @@ export default function App() {
       (user, token) => {
         setIsOAuthConnected(true);
         setTeacherEmail(user.email || "");
-        // If we have a spreadsheet ID, pull up-to-date data or push queued data
         handleFullSync(token);
       },
       () => {
@@ -478,8 +481,8 @@ export default function App() {
 
   // Student Submitting Exam
   const handleExamSubmitted = async (submission: Submission) => {
-    // Append to local state & push immediately to Google Sheets
     const nextSubmissions = [submission, ...submissions];
+    // เรียกใช้งานฟังก์ชันพุชข้อมูลขึ้น Google Sheets ที่อัปเดตใหม่
     await pushStateToSheets(undefined, undefined, nextSubmissions);
     setLatestSubmission(submission);
     setCurrentScreen("student_success");
