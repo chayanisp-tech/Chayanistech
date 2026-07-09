@@ -29,6 +29,8 @@ export default function TeacherExams({
 
   // Form fields for a new Question inside the exam
   const [qType, setQType] = useState<"choice" | "subjective">("choice");
+  // โหมดเสริมสำหรับข้อสอบอัตนัย: 'text' = พิมพ์ตอบ, 'canvas' = คัดลายมือจีนบนตารางกริด
+  const [subMode, setSubMode] = useState<"text" | "canvas">("text"); 
   const [qText, setQText] = useState("");
   const [qImageUrl, setQImageUrl] = useState("");
   const [qOptA, setQOptA] = useState("");
@@ -137,10 +139,16 @@ export default function TeacherExams({
 
           const qTextVal = String(row[textIdx]).trim();
           let qTypeVal: "choice" | "subjective" = "choice";
+          let subjectiveModeVal: "text" | "canvas" = "text";
+
           if (typeIdx !== -1 && row[typeIdx]) {
             const typeStr = String(row[typeIdx]).toLowerCase();
             if (typeStr.includes("subjective") || typeStr.includes("อัตนัย") || typeStr.includes("เขียน")) {
               qTypeVal = "subjective";
+              // ถ้าระบุคีย์เวิร์ดคัด/วาด/ลายมือ ให้เป็น canvas นอกนั้นเป็นพิมพ์ตอบ text
+              if (typeStr.includes("คัด") || typeStr.includes("วาด") || typeStr.includes("ลายมือ")) {
+                subjectiveModeVal = "canvas";
+              }
             }
           }
 
@@ -191,6 +199,8 @@ export default function TeacherExams({
             imageUrl: qImgVal || undefined,
             options,
             answerIndex: qTypeVal === "choice" ? ansIdx : -1,
+            // เพิ่มการระบุโหมดอัตนัยที่จำแนกแล้ว
+            ...(qTypeVal === "subjective" ? { subjectiveMode: subjectiveModeVal } : {}),
           });
         }
 
@@ -233,6 +243,8 @@ export default function TeacherExams({
       points: Number(qPoints),
       type: qType,
       imageUrl: qImageUrl || undefined,
+      // บันทึกแยกโหมดลงฐานข้อมูลคำถาม เพื่อให้หน้าสอบนักเรียนแสดงผลช่องกรอกข้อมูลหรือหน้าแคนวาสให้ตรงจุด
+      ...(qType === "subjective" ? { subjectiveMode: subMode } : {}),
     };
 
     setQuestions([...questions, newQ]);
@@ -442,7 +454,7 @@ export default function TeacherExams({
                         {q.type === "subjective" ? (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#ffe9e7] text-[#8e171c] font-bold rounded-full text-[10px]">
                             <span className="material-symbols-outlined text-[12px]">edit_note</span>
-                            ข้อสอบอัตนัย (พิมพ์ตอบ & วาดภาพ)
+                            ข้อสอบอัตนัย ({(q as any).subjectiveMode === "canvas" ? "โหมดคัดเขียนลายมือจีน" : "โหมดพิมพ์ตอบบรรยาย"})
                           </div>
                         ) : (
                           <div>
@@ -536,10 +548,39 @@ export default function TeacherExams({
                       onChange={() => setQType("subjective")}
                       className="accent-[#8e171c]"
                     />
-                    <span>อัตนัย (พิมพ์ตอบ & วาดภาพ)</span>
+                    <span>อัตนัย</span>
                   </label>
                 </div>
               </div>
+
+              {/* เพิ่มตัวเลือกย่อยเมื่อครูเลือกแบบ "อัตนัย" เพื่อไม่ให้โจทย์หนึ่งข้อต้องทำทั้งสองอย่างปนกัน */}
+              {qType === "subjective" && (
+                <div className="p-3.5 bg-white border border-[#e0bfbc]/60 rounded-2xl space-y-1.5 animate-fade-in">
+                  <label className="block text-xs font-bold text-[#8e171c]">รูปแบบการตอบที่ต้องการในข้อนี้:</label>
+                  <div className="flex gap-5 text-xs font-semibold text-[#59413f]">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="subjectiveSubMode"
+                        checked={subMode === "text"}
+                        onChange={() => setSubMode("text")}
+                        className="accent-[#8e171c]"
+                      />
+                      ให้นักเรียน "พิมพ์ตอบเป็นข้อความบรรยาย"
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="subjectiveSubMode"
+                        checked={subMode === "canvas"}
+                        onChange={() => setSubMode("canvas")}
+                        className="accent-[#8e171c]"
+                      />
+                      ให้นักเรียน "คัดเขียนตัวอักษรจีน" บนกระดานวาดเขียน (Canvas)
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label htmlFor="qTextInput" className="block text-xs font-bold text-[#59413f]">
@@ -548,7 +589,7 @@ export default function TeacherExams({
                 <input
                   id="qTextInput"
                   type="text"
-                  placeholder={qType === "choice" ? "เช่น คำศัพท์ '老师' (lǎoshī) มีความหมายตรงกับข้อใด?" : "เช่น จงเขียนและวาดอธิบายคำว่า '苹果' (píngguǒ) พร้อมระบุความหมายภาษาไทย"}
+                  placeholder={qType === "choice" ? "เช่น คำศัพท์ '老师' (lǎoshī) มีความหมายตรงกับข้อใด?" : subMode === "canvas" ? "เช่น จงคัดตัวอักษรจีนคำว่า '你好' ลงบนกระดานให้ถูกต้อง" : "เช่น ประโยคนี้แปลความหมายเป็นไทยว่าอย่างไร"}
                   value={qText}
                   onChange={(e) => setQText(e.target.value)}
                   className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
@@ -665,11 +706,14 @@ export default function TeacherExams({
                   </div>
                 </div>
               ) : (
-                <div className="p-4 bg-[#fff1f0] border border-[#ffdad7] rounded-2xl flex items-start gap-2.5 text-xs text-[#8e171c] font-medium">
+                /* แก้ไขข้อความจุดนี้ตามที่แจ้ง: ชี้แจงเรื่องการทำงานแยกโหมดที่เหมาะสม */
+                <div className="p-4 bg-[#fffaec] border border-[#ffe0b2] rounded-2xl flex items-start gap-2.5 text-xs text-[#b78103] font-medium animate-fade-in">
                   <span className="material-symbols-outlined shrink-0 text-[18px]">info</span>
                   <div>
-                    <p className="font-bold">หมายเหตุเกี่ยวกับข้อสอบอัตนัย</p>
-                    <p className="mt-0.5 text-[#59413f]">นักเรียนสามารถพิมพ์คำตอบเป็นข้อความและวาดรูปถ่ายทอดความรู้ในกระดานวาดเขียน (Canvas) เพื่อส่งคำตอบร่วมกันได้ ระบบจะบันทึกทั้งสองอย่างเพื่อให้คุณครูตรวจผ่านระบบหลังบ้าน</p>
+                    <p className="font-bold">ℹ️ ข้อมูลหมายเหตุข้อสอบอัตนัย</p>
+                    <p className="mt-0.5 text-[#59413f]">
+                      ระบบรองรับการแบ่งโหมดคำตอบของนักเรียนเพื่อให้เหมาะสมกับความต้องการของครู หากเป็นโจทย์แบบบรรยายแปลความหมายให้เลือก <span className="font-bold">"พิมพ์ตอบเป็นข้อความ"</span> หรือหากเป็นโจทย์ฝึกฝนลายมือคัดจีนให้เลือก <span className="font-bold">"คัดเขียนตัวอักษรจีน"</span> โดยฝั่งหน้าจอนักเรียนจะเปิดเครื่องมือตอบกลับเพียงอย่างใดอย่างหนึ่งตามที่เลือกไว้เพื่อป้องกันการสับสน
+                    </p>
                   </div>
                 </div>
               )}
@@ -704,11 +748,9 @@ export default function TeacherExams({
                     id="qPointsInput"
                     type="number"
                     min={1}
-                    max={100}
                     value={qPoints}
                     onChange={(e) => setQPoints(Number(e.target.value))}
                     className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                    required
                   />
                 </div>
               </div>
@@ -718,102 +760,104 @@ export default function TeacherExams({
               <button
                 type="button"
                 onClick={handleAddQuestion}
-                className="w-full py-2.5 bg-white border border-[#8e171c] hover:bg-[#8e171c]/5 text-[#8e171c] rounded-full text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                className="w-full mt-2 py-3 bg-white border border-[#8e171c] hover:bg-[#ffe9e7]/30 text-[#8e171c] font-bold text-xs rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px]">add</span>
                 เพิ่มคำถามข้อนี้ลงในชุดข้อสอบ
               </button>
             </div>
 
-            {/* Form Actions */}
-            <div className="flex gap-4 justify-end pt-4 border-t border-[#e0bfbc]/30">
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#e0bfbc]/30">
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full text-xs font-bold transition-all cursor-pointer"
+                className="px-5 py-2 rounded-full border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-all cursor-pointer"
               >
                 ยกเลิก
               </button>
               <button
                 type="submit"
-                className="px-6 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer"
+                className="px-6 py-2 rounded-full bg-[#8e171c] hover:bg-[#8c161b] text-white text-xs font-bold transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer"
               >
-                {editingExamId ? "บันทึกการแก้ไขข้อสอบ" : "บันทึกและจัดเก็บชุดข้อสอบ"}
+                {editingExamId ? "บันทึกการแก้ไขข้อสอบ" : "บันทึกชุดข้อสอบ"}
               </button>
             </div>
           </form>
         </div>
       ) : (
-        /* Exams List Dashboard Dashboard View */
-        <div className="bg-white border border-[#e0bfbc] rounded-3xl p-6 shadow-sm">
+        /* Exams Repository Grid List View */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {exams.length === 0 ? (
-            <div className="text-center py-12 text-[#59413f]">
-              <span className="material-symbols-outlined text-4xl text-[#e0bfbc] mb-2">quiz</span>
-              <p className="text-sm font-bold">ยังไม่มีชุดข้อสอบวิชาภาษาจีนในระบบ</p>
-              <p className="text-xs mt-1 text-[#8c706e]">คุณครูสามารถคลิกที่ปุ่ม "สร้างข้อสอบใหม่" ด้านบนเพื่อเริ่มสร้างแบบทดสอบได้ทันที</p>
+            <div className="col-span-full py-16 text-center bg-white border border-[#e0bfbc] rounded-3xl">
+              <span className="material-symbols-outlined text-4xl text-[#e0bfbc]">folder_open</span>
+              <p className="text-sm font-semibold text-[#59413f] mt-2">ยังไม่มีชุดข้อสอบจีนในระบบคลังขณะนี้</p>
+              <button
+                onClick={() => setIsCreating(true)}
+                className="mt-4 px-4 py-2 bg-[#8e171c] text-white text-xs font-bold rounded-full cursor-pointer hover:bg-[#8c161b] transition-all"
+              >
+                เริ่มสร้างข้อสอบชุดแรก
+              </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-[#e0bfbc]/50 text-[#251817] font-bold">
-                    <th className="pb-3 pl-2">รหัสวิชา</th>
-                    <th className="pb-3">หัวข้อข้อสอบ</th>
-                    <th className="pb-3 text-center">จำนวนคำถาม</th>
-                    <th className="pb-3 text-center">เวลา (นาที)</th>
-                    <th className="pb-3 text-center">สถานะเปิดสอบ</th>
-                    <th className="pb-3 text-right pr-2">การจัดการ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#e0bfbc]/20 text-[#59413f] font-medium">
-                  {exams.map((exam) => (
-                    <tr key={exam.id} className="hover:bg-[#fff8f7]/40 transition-colors">
-                      <td className="py-4 pl-2 font-bold text-[#8e171c]">{exam.courseCode}</td>
-                      <td className="py-4">
-                        <div className="font-bold text-[#251817] text-sm">{exam.title}</div>
-                        {exam.description && <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-1 max-w-xs">{exam.description}</div>}
-                      </td>
-                      <td className="py-4 text-center font-bold">{exam.questions.length} ข้อ</td>
-                      <td className="py-4 text-center font-bold">{exam.timeLimitMinutes} นาที</td>
-                      <td className="py-4 text-center">
-                        <button
-                          onClick={() => onToggleActive(exam.id)}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
-                            exam.isActive
-                              ? "bg-green-100 text-green-700 hover:bg-green-200"
-                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                          }`}
-                        >
-                          {exam.isActive ? "เปิดใช้งาน" : "ปิดใช้งาน"}
-                        </button>
-                      </td>
-                      <td className="py-4 text-right pr-2">
-                        <div className="flex justify-end gap-2.5">
-                          <button
-                            onClick={() => handleEditExam(exam)}
-                            className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">edit</span>
-                            แก้ไข
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`คุณต้องการลบข้อสอบวิชา ${exam.title} ใช่หรือไม่?`)) {
-                                onDeleteExam(exam.id);
-                              }
-                            }}
-                            className="text-red-600 hover:text-red-800 font-bold flex items-center gap-0.5 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">delete</span>
-                            ลบ
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            exams.map((exam) => (
+              <div key={exam.id} className="bg-white border border-[#e0bfbc] rounded-3xl p-5 shadow-sm flex flex-col justify-between space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="px-2.5 py-0.5 bg-[#ffe9e7] text-[#8e171c] font-black text-[10px] rounded-full uppercase tracking-wide">
+                      {exam.courseCode}
+                    </span>
+                    <button
+                      onClick={() => onToggleActive(exam.id)}
+                      className={`px-3 py-1 text-[10px] font-bold rounded-full border transition-all cursor-pointer ${
+                        exam.isActive 
+                          ? "bg-green-50 text-green-700 border-green-200" 
+                          : "bg-gray-50 text-gray-400 border-gray-200"
+                      }`}
+                    >
+                      {exam.isActive ? "🟢 เปิดให้นักเรียนสอบ" : "⚪ ปิดระบบสอบชั่วคราว"}
+                    </button>
+                  </div>
+                  <h3 className="text-lg font-bold text-[#251817] line-clamp-1">{exam.title}</h3>
+                  <p className="text-xs text-[#59413f] line-clamp-2 h-8 font-medium leading-relaxed">
+                    {exam.description || "ไม่มีข้อมูลรายละเอียดคำชี้แจงสำหรับหัวข้อนี้"}
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-[#e0bfbc]/30 flex justify-between items-center text-xs">
+                  <div className="flex gap-3 text-[#59413f] font-semibold text-[11px]">
+                    <span className="flex items-center gap-0.5">
+                      <span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>
+                      {exam.questions.length} ข้อ
+                    </span>
+                    <span className="flex items-center gap-0.5">
+                      <span className="material-symbols-outlined text-[14px]">schedule</span>
+                      {exam.timeLimitMinutes} นาที
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditExam(exam)}
+                      className="p-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-lg flex items-center cursor-pointer transition-all"
+                      title="แก้ไขข้อสอบ"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm("คุณครูแน่ใจว่าต้องการลบชุดข้อสอบนี้ออกจากคลังข้อมูลถาวร?")) {
+                          onDeleteExam(exam.id);
+                        }
+                      }}
+                      className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg flex items-center cursor-pointer transition-all"
+                      title="ลบข้อสอบ"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">delete</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}
