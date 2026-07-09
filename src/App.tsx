@@ -491,7 +491,7 @@ export default function App() {
     }
   };
 
-  // ✨ ฟังก์ชันรับคำตอบนักเรียนเวอร์ชันล็อกปุ่มรัว แต่อะลุ้มอล่วยสิทธิ์การจับทุจริตแบบเดิม
+  // ✨ ฟังก์ชันรับคำตอบนักเรียนแบบ Real-time ผ่าน Google Apps Script ของคุณครูโดยเฉพาะ
   const handleExamSubmitted = async (submission: Submission) => {
     // 🛑 ถ้าระบบกำลังอัปโหลดข้อมูลของเสี้ยววินาทีนี้อยู่ ให้สกัดทิ้งทันที คะแนนจะไม่บันทึกซ้ำซ้อน
     if (isSubmittingRef.current) {
@@ -499,15 +499,32 @@ export default function App() {
       return;
     }
     
-    // ล็อกระบบป้องกันการส่งเบิ้ล
     isSubmittingRef.current = true;
 
     try {
+      // 1. บันทึกลงบราวเซอร์ในเครื่องเด็ก และส่งไป Firestore สำรองไว้ก่อนทันที
       const nextSubmissions = [submission, ...submissions];
-      // เรียกใช้งานฟังก์ชันพุชข้อมูลขึ้น Google Sheets ที่อัปเดตใหม่
-      await pushStateToSheets(undefined, undefined, nextSubmissions);
+      saveStateToLocal(undefined, undefined, nextSubmissions);
       setLatestSubmission(submission);
       setCurrentScreen("student_success");
+
+      // 🚀 2. ยิงข้อมูลคะแนนตรงเข้า Google Sheets ของคุณครูผ่าน Web App ทันทีแบบ Real-time!
+      const webAppUrl = "https://script.google.com/macros/s/AKfycbxPc9UKoEkXe6GmhX4bjYlxNBdgYWfGV3ACJVkdobj3IgOIgbWRBRmTJyz3KlspfCCubg/exec"; 
+
+      if (webAppUrl) {
+        // ใช้ fetch ยิงแบบเบื้องหลัง (Background) เครื่องเด็กไม่ต้องมีสิทธิ์ในกูเกิลชีทก็ส่งเข้าชีทครูได้
+        fetch(webAppUrl, {
+          method: "POST",
+          mode: "no-cors", // ใช้ no-cors เพื่อข้ามปัญหาเรื่องความปลอดภัยเบราว์เซอร์ฝั่งเด็ก
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ submission: submission }),
+        })
+        .then(() => console.log("📊 คะแนนถูกพุชเข้า Google Sheets แบบ Real-time เรียบร้อยแล้ว!"))
+        .catch((err) => console.error("Real-time Sheets push failed:", err));
+      }
+
     } catch (error) {
       console.error("Submission failed:", error);
     } finally {
