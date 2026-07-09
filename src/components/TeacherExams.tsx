@@ -42,7 +42,7 @@ export default function TeacherExams({
   const [qError, setQError] = useState("");
 
   // =========================================================
-  // ⚡ ฟังก์ชันใหม่: อัปโหลดรูปตรงเข้า Google Drive อัตโนมัติ ป้องกันตัวอักษรเต็ม
+  // ⚡ ลิงก์ Google Apps Script ของครูชญานิศ (อัปเดตแล้วเรียบร้อย)
   // =========================================================
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,8 +60,8 @@ export default function TeacherExams({
       try {
         const base64Raw = (event.target?.result as string).split(",")[1];
         
-        // 🛑 คุณครูนำลิงก์ URL ที่ได้จากขั้นตอนทำให้ใช้งานได้ (Deploy) มาวางแทนที่ตรงนี้ครับ 🛑
-        const GOOGLE_APPS_SCRIPT_URL = "วาง_URL_เว็บแอป_ที่ลงท้ายด้วย_/exec_ตรงนี้ครับ";
+        // 🔗 ฝังลิงก์เว็บแอปสคริปต์ของครูตรงนี้เรียบร้อยครับ
+        const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxYyXQWpyOCeOfJBQELRkwLwTLAVrm_t_FpBH681u-TNwaSKJNz6432adGneCxuAvMRfA/exec";
 
         const driveResponse = await fetch(GOOGLE_APPS_SCRIPT_URL, {
           method: "POST",
@@ -76,7 +76,7 @@ export default function TeacherExams({
         const result = await driveResponse.json();
         
         if (result.status === "success") {
-          setQImageUrl(result.fileUrl); // บันทึกเป็นลิงก์สั้น ทรงประสิทธิภาพ ไม่ทำลายเซลล์ Excel
+          setQImageUrl(result.fileUrl); // ได้รับ Direct Link สั้นๆ กลับมาเก็บในระบบ
           setQError(""); 
           alert("🎉 อัปโหลดรูปภาพเข้า Google Drive สำเร็จเรียบร้อย!");
         } else {
@@ -599,7 +599,7 @@ export default function TeacherExams({
                 <div className="space-y-1">
                   <label htmlFor="qImageUrlInput" className="block text-xs font-bold text-[#59413f] flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">link</span>
-                    ที่อยู่ลิงก์รูปภาพ (ระบบเติมให้อัตโนมัติ หรือระบุเองได้)
+                    ที่อยู่ลิงก์รูปภาพ (ระบบเติมให้อัตโนมัติ)
                   </label>
                   <input
                     id="qImageUrlInput"
@@ -644,7 +644,7 @@ export default function TeacherExams({
                     <div className="space-y-1">
                       <label htmlFor="qOptBInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก B</label>
                       <input
-                        id="qOptBInput"
+                        id="fake_id_b"
                         type="text"
                         placeholder="เช่น นักเรียน"
                         value={qOptB}
