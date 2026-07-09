@@ -555,15 +555,30 @@ export default function App() {
     }
   };
 
-  // Teacher Logging In
-  const handleTeacherLoginSuccess = (email: string, oauthConnected: boolean) => {
-    setTeacherEmail(email);
-    setIsOAuthConnected(oauthConnected);
-    setCurrentScreen("teacher_dashboard");
-    if (oauthConnected) {
-      handleFullSync();
+// Teacher Logging In (เวอร์ชันอัปเกรดดึงคะแนนจาก Firestore อัตโนมัติเมื่อเข้าหน้าเว็บครู)
+const handleTeacherLoginSuccess = async (email: string, oauthConnected: boolean) => {
+  setTeacherEmail(email);
+  setIsOAuthConnected(oauthConnected);
+
+  // 🚀 สั่งดึงข้อมูลคะแนนล่าสุดจาก Firestore มาแสดงผลบนหน้าเว็บทันทีก่อน
+  try {
+    const firestoreData = await pullAllFromFirestore();
+    if (firestoreData) {
+      setStudents(firestoreData.students);
+      setExams(firestoreData.exams);
+      setSubmissions(firestoreData.submissions);
+      if (firestoreData.settings) setSettings(firestoreData.settings);
+      console.log("🔄 ดึงข้อมูลล่าสุดจาก Firestore สำเร็จแล้ว!");
     }
-  };
+  } catch (err) {
+    console.error("Failed to pull from Firestore on login:", err);
+  }
+
+  setCurrentScreen("teacher_dashboard");
+  if (oauthConnected) {
+    handleFullSync();
+  }
+};
 
   // Teacher Logging Out
   const handleTeacherLogout = async () => {
