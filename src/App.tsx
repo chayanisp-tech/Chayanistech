@@ -6,7 +6,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SUBMISSIONS,
 } from "./lib/mockData";
-import { initAuth, getAccessToken, logout, googleSignIn } from "./lib/firebase";
+import { initAuth, getAccessToken, logout, googleSignIn, db } from "./lib/firebase"; // ดึง db (Firestore) ออกมาใช้
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore"; // นำเข้าโมดูล Firestore สำหรับ Real-time
 import {
   searchDatabaseSpreadsheet,
   createDatabaseSpreadsheet,
@@ -40,15 +41,12 @@ type Screen =
   | "teacher_login"
   | "teacher_dashboard";
 
-// ฟังก์ชันพิเศษสำหรับแกะรหัส ID จาก URL ของ Google Sheets ทั้งแบบสั้นและแบบยาว
 const extractSpreadsheetId = (urlOrId: string | null): string | null => {
   if (!urlOrId) return null;
-  // ถ้ายื่นมาเป็น URL ยาว เช่น https://docs.google.com/spreadsheets/d/1XYZ.../edit
   const matches = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/);
   if (matches && matches[1]) {
     return matches[1];
   }
-  // ถ้าไม่ใช่ URL ยาว ให้มองว่าเป็น ID ตรงๆ ตัว
   return urlOrId.trim();
 };
 
@@ -81,8 +79,35 @@ export default function App() {
   const [publicDataError, setPublicDataError] = useState<string | null>(null);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
 
-  // ✨ ตัวล็อกระบบป้องกันการกดปุ่มส่งข้อสอบรัวเบิ้ลพร้อมกันในเสี้ยววินาที
   const isSubmittingRef = useRef(false);
+
+  // 📡 ระบบดักฟังคะแนนสอบแบบ Real-time บนหน้าแดชบอร์ดครู
+  useEffect(() => {
+    if (currentScreen !== "teacher_dashboard" || !db) return;
+
+    console.log("📡 ระบบ Real-time เฝ้าฟังคะแนนสอบจาก Firestore เริ่มทำงาน...");
+    
+    // ดักฟังห้อง "submissions" ในคลาวด์ เรียงลำดับตามเวลาส่งล่าสุด
+    const q = query(collection(db, "submissions"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const realTimeSubmissions: Submission[] = [];
+      snapshot.forEach((doc) => {
+        realTimeSubmissions.push(doc.data() as Submission);
+      });
+      
+      // อัปเดตข้อมูลขึ้นหน้าจอแดชบอร์ดคุณครูทันทีที่ตรวจพบว่ามีการส่งคะแนนเข้ามาใหม่!
+      setSubmissions(realTimeSubmissions);
+      localStorage.setItem("exam_submissions", JSON.stringify(realTimeSubmissions));
+      console.log(`🔔 ตารางคุณครูได้รับการอัปเดตคะแนนแบบ Real-time แล้ว! ทั้งหมด ${realTimeSubmissions.length} รายการ`);
+    }, (error) => {
+      console.error("Firestore Real-time error:", error);
+    });
+
+    return () => {
+      console.log("🔌 ปิดระบบดักฟัง Real-time เมื่อออกจากหน้าแดชบอร์ด");
+      unsubscribe();
+    };
+  }, [currentScreen]);
 
   const loadPublicData = async (sheetId: string) => {
     const cleanSheetId = extractSpreadsheetId(sheetId);
@@ -106,7 +131,6 @@ export default function App() {
           setSettings(mergedSettings);
           localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
         }
-        // Update local sync status
         const updatedSync: SyncStatus = {
           spreadsheetId: cleanSheetId,
           spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
@@ -119,15 +143,12 @@ export default function App() {
         setActiveSheetId(cleanSheetId);
         return true;
       } else {
-        setPublicDataError(
-          "ไม่สามารถโหลดข้อสอบจาก Google Sheets นี้ได้ เนื่องจากสิทธิ์เข้าถึงไม่ถูกต้อง หรือไฟล์ไม่ตรงตามรูปแบบของแอป " +
-          "กรุณาตรวจสอบว่าไฟล์ถูกแชร์แบบ 'ทุกคนที่มีลิงก์มีสิทธิ์อ่าน (Anyone with the link can view)' เรียบร้อยแล้ว"
-        );
+        setPublicDataError("ไม่สามารถโหลดข้อสอบได้ กรุณาแชร์สิทธิ์เป็นทุกคนที่มีลิงก์มีสิทธิ์อ่าน");
         return false;
       }
     } catch (err) {
       console.error("Public fetch failed:", err);
-      setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด กรุณาลองใหม่อีกครั้ง");
+      setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด");
       return false;
     } finally {
       setIsLoadingPublicData(false);
@@ -138,15 +159,12 @@ export default function App() {
     localStorage.removeItem("student_active_sheet_id");
     setActiveSheetId(null);
     setPublicDataError(null);
-    
-    // Clear custom data back to demo data
     setStudents(DEFAULT_STUDENTS);
     localStorage.setItem("exam_students", JSON.stringify(DEFAULT_STUDENTS));
     setExams(DEFAULT_EXAMS);
     localStorage.setItem("exam_exams", JSON.stringify(DEFAULT_EXAMS));
     setSettings(DEFAULT_SETTINGS);
     localStorage.setItem("exam_settings", JSON.stringify(DEFAULT_SETTINGS));
-    
     const clearedSync: SyncStatus = {
       spreadsheetId: null,
       spreadsheetUrl: null,
@@ -156,15 +174,8 @@ export default function App() {
     };
     setSyncStatus(clearedSync);
     localStorage.setItem("exam_sync_status", JSON.stringify(clearedSync));
-    
-    // Clear URL query params
-    if (typeof window !== "undefined" && window.history.pushState) {
-      const newurl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-      window.history.pushState({ path: newurl }, "", newurl);
-    }
   };
 
-  // 1. Initial State Load from LocalStorage
   useEffect(() => {
     const localStudents = localStorage.getItem("exam_students");
     const localExams = localStorage.getItem("exam_exams");
@@ -172,46 +183,26 @@ export default function App() {
     const localSettings = localStorage.getItem("exam_settings");
     const localSync = localStorage.getItem("exam_sync_status");
 
-    if (localStudents) {
-      setStudents(JSON.parse(localStudents));
-    } else {
-      setStudents(DEFAULT_STUDENTS);
-      localStorage.setItem("exam_students", JSON.stringify(DEFAULT_STUDENTS));
-    }
+    if (localStudents) setStudents(JSON.parse(localStudents));
+    else setStudents(DEFAULT_STUDENTS);
 
-    if (localExams) {
-      setExams(JSON.parse(localExams));
-    } else {
-      setExams(DEFAULT_EXAMS);
-      localStorage.setItem("exam_exams", JSON.stringify(DEFAULT_EXAMS));
-    }
+    if (localExams) setExams(JSON.parse(localExams));
+    else setExams(DEFAULT_EXAMS);
 
-    if (localSubmissions) {
-      setSubmissions(JSON.parse(localSubmissions));
-    } else {
-      setSubmissions(DEFAULT_SUBMISSIONS);
-      localStorage.setItem("exam_submissions", JSON.stringify(DEFAULT_SUBMISSIONS));
-    }
+    if (localSubmissions) setSubmissions(JSON.parse(localSubmissions));
+    else setSubmissions(DEFAULT_SUBMISSIONS);
 
-    if (localSettings) {
-      setSettings(JSON.parse(localSettings));
-    } else {
-      setSettings(DEFAULT_SETTINGS);
-      localStorage.setItem("exam_settings", JSON.stringify(DEFAULT_SETTINGS));
-    }
+    if (localSettings) setSettings(JSON.parse(localSettings));
+    else setSettings(DEFAULT_SETTINGS);
 
     if (localSync) {
       const parsedSync = JSON.parse(localSync);
       setSyncStatus(parsedSync);
-      if (parsedSync.spreadsheetId) {
-        setActiveSheetId(parsedSync.spreadsheetId);
-      }
+      if (parsedSync.spreadsheetId) setActiveSheetId(parsedSync.spreadsheetId);
     }
 
-    // แก้ไขจุดที่ 1: ดึงค่าจากพารามิเตอร์แล้วนำไปสกัดหาไอดีที่ถูกต้องทันที รองรับทั้งลิงก์สั้นและยาว
     const urlParams = new URLSearchParams(window.location.search);
     const sheetIdParam = urlParams.get("sheetId");
-    
     if (sheetIdParam) {
       const cleanId = extractSpreadsheetId(sheetIdParam);
       if (cleanId) {
@@ -220,62 +211,37 @@ export default function App() {
       }
     } else {
       const savedSheetId = localStorage.getItem("student_active_sheet_id");
-      if (savedSheetId) {
-        loadPublicData(savedSheetId);
-      }
+      if (savedSheetId) loadPublicData(savedSheetId);
     }
   }, []);
 
-  // Firestore Synchronizer on startup
   useEffect(() => {
     testConnection();
-    
     const loadFirestoreData = async () => {
       try {
         const firestoreData = await pullAllFromFirestore();
         if (firestoreData) {
           const { students: fStudents, exams: fExams, submissions: fSubmissions, settings: fSettings } = firestoreData;
-          
           if (fExams.length > 0) {
             setExams(fExams);
             localStorage.setItem("exam_exams", JSON.stringify(fExams));
-            
             setStudents(fStudents);
             localStorage.setItem("exam_students", JSON.stringify(fStudents));
-            
             setSubmissions(fSubmissions);
             localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
-            
             if (fSettings) {
               setSettings(fSettings);
               localStorage.setItem("exam_settings", JSON.stringify(fSettings));
             }
-            console.log("Successfully synchronized and loaded all data from Firestore!");
-          } else {
-            console.log("Firestore database is empty. Seeding with default data...");
-            const currentStudents = JSON.parse(localStorage.getItem("exam_students") || "[]");
-            const currentExams = JSON.parse(localStorage.getItem("exam_exams") || "[]");
-            const currentSubmissions = JSON.parse(localStorage.getItem("exam_submissions") || "[]");
-            const currentSettings = JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS));
-            
-            await pushAllToFirestore(
-              currentStudents.length > 0 ? currentStudents : DEFAULT_STUDENTS,
-              currentExams.length > 0 ? currentExams : DEFAULT_EXAMS,
-              currentSubmissions.length > 0 ? currentSubmissions : DEFAULT_SUBMISSIONS,
-              currentSettings
-            );
-            console.log("Successfully seeded Firestore with standard dataset.");
           }
         }
       } catch (e) {
         console.error("Failed to load initial data from Firestore:", e);
       }
     };
-    
     loadFirestoreData();
   }, []);
 
-  // 2. Local State Persister
   const saveStateToLocal = (
     updatedStudents?: Student[],
     updatedExams?: Exam[],
@@ -285,61 +251,48 @@ export default function App() {
     if (updatedStudents) {
       setStudents(updatedStudents);
       localStorage.setItem("exam_students", JSON.stringify(updatedStudents));
-      syncStudentsToFirestore(updatedStudents).catch(err => console.error("Firestore student sync failed:", err));
+      syncStudentsToFirestore(updatedStudents).catch(err => console.error(err));
     }
     if (updatedExams) {
       setExams(updatedExams);
       localStorage.setItem("exam_exams", JSON.stringify(updatedExams));
-      syncExamsToFirestore(updatedExams).catch(err => console.error("Firestore exam sync failed:", err));
+      syncExamsToFirestore(updatedExams).catch(err => console.error(err));
     }
     if (updatedSubmissions) {
       setSubmissions(updatedSubmissions);
       localStorage.setItem("exam_submissions", JSON.stringify(updatedSubmissions));
-      syncSubmissionsToFirestore(updatedSubmissions).catch(err => console.error("Firestore submission sync failed:", err));
+      syncSubmissionsToFirestore(updatedSubmissions).catch(err => console.error(err));
     }
     if (updatedSettings) {
       setSettings(updatedSettings);
       localStorage.setItem("exam_settings", JSON.stringify(updatedSettings));
-      saveSettingsToFirestore(updatedSettings).catch(err => console.error("Firestore settings sync failed:", err));
+      saveSettingsToFirestore(updatedSettings).catch(err => console.error(err));
     }
   };
 
-  // 3. Google Drive / Sheets Synchronizer and State Pushing
   const pushStateToSheets = async (
     updatedStudents?: Student[],
     updatedExams?: Exam[],
     updatedSubmissions?: Submission[],
     updatedSettings?: SystemSettings
   ) => {
-    // บันทึกลงบราวเซอร์ทันที
     saveStateToLocal(updatedStudents, updatedExams, updatedSubmissions, updatedSettings);
-
     const targetSheetId = syncStatus.spreadsheetId || activeSheetId;
     const token = getAccessToken();
 
     if (token && targetSheetId) {
       try {
-        // ดึงข้อมูลล่าสุดจาก Sheets มาเช็คก่อนที่จะส่ง เพื่อไม่ให้ไปเขียนทับสิ่งที่ครูลบในชีท
         const fetched = await fetchFromSheets(token, targetSheetId);
-        
         let studentsToSync = updatedStudents !== undefined ? updatedStudents : (fetched?.students || JSON.parse(localStorage.getItem("exam_students") || "[]"));
         let examsToSync = updatedExams !== undefined ? updatedExams : (fetched?.exams || JSON.parse(localStorage.getItem("exam_exams") || "[]"));
         let submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : (fetched?.submissions || JSON.parse(localStorage.getItem("exam_submissions") || "[]"));
         let settingsToSync = updatedSettings !== undefined ? updatedSettings : (fetched?.settings || JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)));
 
-        // อัปเดตในเครื่องให้ตรงกับชีทด้วย
         setStudents(studentsToSync);
         setExams(examsToSync);
         setSubmissions(submissionsToSync);
 
-        await syncLocalToSheets(
-          token,
-          targetSheetId,
-          studentsToSync,
-          examsToSync,
-          submissionsToSync,
-          settingsToSync
-        );
+        await syncLocalToSheets(token, targetSheetId, studentsToSync, examsToSync, submissionsToSync, settingsToSync);
 
         const nextSync: SyncStatus = {
           ...syncStatus,
@@ -352,7 +305,7 @@ export default function App() {
         setSyncStatus(nextSync);
         localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
       } catch (err: any) {
-        console.error("Direct push to Google Sheets failed:", err);
+        console.error("Direct push to Sheets failed:", err);
       }
     }
   };
@@ -370,19 +323,14 @@ export default function App() {
       let sheetId = syncStatus.spreadsheetId;
       let sheetUrl = syncStatus.spreadsheetUrl;
 
-      if (!sheetId) {
-        sheetId = await searchDatabaseSpreadsheet(token);
-      }
-
+      if (!sheetId) sheetId = await searchDatabaseSpreadsheet(token);
       if (!sheetId) {
         const createResult = await createDatabaseSpreadsheet(token);
         sheetId = createResult.spreadsheetId;
         sheetUrl = createResult.spreadsheetUrl;
       }
 
-      if (!sheetId) {
-        throw new Error("ล้มเหลวในการดึงข้อมูลหรือจัดสร้างสเปรดชีต");
-      }
+      if (!sheetId) throw new Error("ล้มเหลวในการดึงข้อมูลหรือจัดสร้างสเปรดชีต");
 
       const currentLocals = {
         students: JSON.parse(localStorage.getItem("exam_students") || "[]"),
@@ -398,39 +346,17 @@ export default function App() {
       let mergedSettings = currentLocals.settings;
 
       if (fetched) {
-        const isSheetEmpty = 
-          fetched.students.length === 0 && 
-          fetched.exams.length === 0 && 
-          fetched.submissions.length === 0;
-
-        if (isSheetEmpty) {
-          // ถ้าสเปรดชีตว่างเปล่าจริงๆ (เช่นเพิ่งสร้างใหม่) ค่อยเอาจากในเว็บอัปโหลดขึ้นไป
-          mergedStudents = currentLocals.students;
-          mergedExams = currentLocals.exams;
-          mergedSubmissions = currentLocals.submissions;
-          mergedSettings = currentLocals.settings;
-        } else {
-          // ✨ ปรับโค้ดตรงนี้: ให้ถือเอา Google Sheets เป็น "ความจริงสูงสุด" 
-          // ถ้าคุณครูลบแถวไหนใน Sheets ออกไป พอซิงค์ปุ๊บ ในเว็บจะถูกลบตามทันที!
+        const isSheetEmpty = fetched.students.length === 0 && fetched.exams.length === 0 && fetched.submissions.length === 0;
+        if (!isSheetEmpty) {
           mergedStudents = fetched.students;
           mergedExams = fetched.exams;
-          mergedSubmissions = fetched.submissions; // เปลี่ยนจากเดิมที่เอามาบวกกัน ให้เชื่อตาม Sheets 100%
+          mergedSubmissions = fetched.submissions;
           mergedSettings = { ...currentLocals.settings, ...fetched.settings };
         }
       }
 
-      // บันทึกข้อมูลลงบราวเซอร์และ Firestore ตามที่ Sheets กำหนดมา
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
-
-      // เขียนข้อมูลที่ตรงกันกลับไปที่ Sheets อีกครั้งเพื่อความชัวร์
-      await syncLocalToSheets(
-        token,
-        sheetId,
-        mergedStudents,
-        mergedExams,
-        mergedSubmissions,
-        mergedSettings
-      );
+      await syncLocalToSheets(token, sheetId, mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
 
       const nextSync: SyncStatus = {
         spreadsheetId: sheetId,
@@ -439,35 +365,15 @@ export default function App() {
         isSyncing: false,
         error: null,
       };
-
       setSyncStatus(nextSync);
       localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
     } catch (err: any) {
       console.error("Full Sync Error:", err);
-      
-      const isAuthError = err?.message?.includes("invalid authentication credentials") || 
-                          err?.message?.includes("Expected OAuth 2") ||
-                          err?.message?.includes("401");
-      
       let userFriendlyError = err?.message || "เกิดข้อผิดพลาดในการซิงค์ข้อมูล";
-      
-      if (isAuthError) {
-        userFriendlyError = "เซสชัน Google Sheets หมดอายุหรือไม่ได้เปิดสิทธิ์กรุณากดคลิกปุ่ม 'เชื่อมโยง Google Drive & Sheets' อีกครั้งเพื่อต่ออายุและยืนยันสิทธิ์";
-        setIsOAuthConnected(false);
-        logout();
-      }
-
-      const nextSync: SyncStatus = {
-        ...syncStatus,
-        isSyncing: false,
-        error: userFriendlyError,
-      };
-      setSyncStatus(nextSync);
-      localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
+      setSyncStatus((prev) => ({ ...prev, isSyncing: false, error: userFriendlyError }));
     }
   };
 
-  // 4. Auth Auto-reconnect initialization
   useEffect(() => {
     const unsubscribe = initAuth(
       (user, token) => {
@@ -482,7 +388,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Student Entering Exam Room
   const handleEnterExamRoom = (studentId: string) => {
     const studentObj = students.find((s) => s.id === studentId);
     if (studentObj) {
@@ -491,49 +396,41 @@ export default function App() {
     }
   };
 
-  // ✨ ฟังก์ชันรับคำตอบนักเรียนแบบ Real-time ผ่าน Google Apps Script ของคุณครูโดยเฉพาะ
+  // 🚀 ฟังก์ชันส่งคำตอบนักเรียน: ยิงหา Cloud Firestore (เพื่อเด้งขึ้นเว็บครูทันที) และ Google Sheets แยกจากกันอัตโนมัติ
   const handleExamSubmitted = async (submission: Submission) => {
-    // 🛑 ถ้าระบบกำลังอัปโหลดข้อมูลของเสี้ยววินาทีนี้อยู่ ให้สกัดทิ้งทันที คะแนนจะไม่บันทึกซ้ำซ้อน
-    if (isSubmittingRef.current) {
-      console.log("⚠️ บล็อกการกดส่งซ้ำซ้อนในเสี้ยววินาทีสำเร็จ");
-      return;
-    }
-    
+    if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
     try {
-      // 1. บันทึกลงบราวเซอร์ในเครื่องเด็ก และส่งไป Firestore สำรองไว้ก่อนทันที
+      // 1. อัปเดตข้อมูลเซฟลงบราวเซอร์เครื่องนักเรียน
       const nextSubmissions = [submission, ...submissions];
-      saveStateToLocal(undefined, undefined, nextSubmissions);
       setLatestSubmission(submission);
       setCurrentScreen("student_success");
 
-      // 🚀 2. ยิงข้อมูลคะแนนตรงเข้า Google Sheets ของคุณครูผ่าน Web App ทันทีแบบ Real-time!
+      // 2. 📡 ยิงขึ้น Cloud Firestore ทันที (จะไปเด้งสะกิดหน้าจอแดชบอร์ดครูให้โชว์อัตโนมัติเรียลไทม์)
+      await syncSubmissionsToFirestore(nextSubmissions);
+
+      // 3. 📊 ยิงเข้า Google Sheets ของคุณครูโดยตรงแยกต่างหากผ่าน Web App อัตโนมัติ
       const webAppUrl = "https://script.google.com/macros/s/AKfycbxPc9UKoEkXe6GmhX4bjYlxNBdgYWfGV3ACJVkdobj3IgOIgbWRBRmTJyz3KlspfCCubg/exec"; 
 
       if (webAppUrl) {
-        // ใช้ fetch ยิงแบบเบื้องหลัง (Background) เครื่องเด็กไม่ต้องมีสิทธิ์ในกูเกิลชีทก็ส่งเข้าชีทครูได้
         fetch(webAppUrl, {
           method: "POST",
-          mode: "no-cors", // ใช้ no-cors เพื่อข้ามปัญหาเรื่องความปลอดภัยเบราว์เซอร์ฝั่งเด็ก
-          headers: {
-            "Content-Type": "application/json",
-          },
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ submission: submission }),
         })
-        .then(() => console.log("📊 คะแนนถูกพุชเข้า Google Sheets แบบ Real-time เรียบร้อยแล้ว!"))
-        .catch((err) => console.error("Real-time Sheets push failed:", err));
+        .then(() => console.log("✅ คะแนนถูกส่งเข้า Google Sheets เรียบร้อย!"))
+        .catch((err) => console.error("Sheets push error:", err));
       }
 
     } catch (error) {
       console.error("Submission failed:", error);
     } finally {
-      // 🔓 เมื่อข้อมูลยิงเข้า Google Sheets และเปลี่ยนหน้าจอผ่านแล้ว ค่อยปลดล็อกให้เปิดรับคำตอบรอบถัดไป
       isSubmittingRef.current = false;
     }
   };
 
-  // Manual Trigger Google Sheet authentication popup
   const handleConnectGoogle = async () => {
     try {
       const result = await googleSignIn();
@@ -544,54 +441,32 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Google sync authorization cancelled:", err);
-      let errMsg = err?.message || "การตรวจสอบสิทธิ์ล้มเหลว หรือ ป๊อปอัพถูกบล็อก";
-      errMsg = errMsg.replace("IFRAME_POPUP_BLOCKED: ", "")
-                     .replace("UNAUTHORIZED_DOMAIN: ", "")
-                     .replace("POPUP_BLOCKED: ", "");
-      setSyncStatus((prev) => ({
-        ...prev,
-        error: errMsg
-      }));
     }
   };
 
-// Teacher Logging In (เวอร์ชันอัปเกรดแบบปลอดภัย ไม่ค้างแน่นอน)
-  const handleTeacherLoginSuccess = (email: string, oauthConnected: boolean) => {
+  const handleTeacherLoginSuccess = async (email: string, oauthConnected: boolean) => {
     setTeacherEmail(email);
     setIsOAuthConnected(oauthConnected);
-    
-    // 1. เปลี่ยนหน้าเข้า Dashboard ของคุณครูทันทีโดยไม่ต้องรอโหลดให้ค้าง
     setCurrentScreen("teacher_dashboard");
-
-    // 2. แอบไปดึงข้อมูลล่าสุดจาก Firestore ให้เงียบๆ หลังบ้าน (ถ้ามีฟังก์ชันนี้)
+    
+    // ดึงคะแนนจากคลาวด์มารอไว้เลยตั้งแต่ตอนล็อกอิน
     try {
-      // ป้องกันการ Error หากชื่อฟังก์ชันไม่ตรงกันในระบบของคุณครู
-      if (typeof pullAllFromFirestore === "function") {
-        pullAllFromFirestore().then((firestoreData) => {
-          if (firestoreData) {
-            setStudents(firestoreData.students);
-            setExams(firestoreData.exams);
-            setSubmissions(firestoreData.submissions);
-            if (firestoreData.settings) setSettings(firestoreData.settings);
-            console.log("🔄 ดึงข้อมูลล่าสุดจาก Firestore สำเร็จแล้ว!");
-          }
-        }).catch((err) => {
-          console.error("Failed to pull from Firestore:", err);
-        });
-      } else {
-        console.log("⚠️ ไม่พบฟังก์ชัน pullAllFromFirestore ในระบบ");
+      const firestoreData = await pullAllFromFirestore();
+      if (firestoreData) {
+        setStudents(firestoreData.students);
+        setExams(firestoreData.exams);
+        setSubmissions(firestoreData.submissions);
+        if (firestoreData.settings) setSettings(firestoreData.settings);
       }
     } catch (err) {
-      console.error("Error during background sync:", err);
+      console.error(err);
     }
 
-    // 3. ทำการซิงค์ข้อมูลสเปรดชีตหลัก
     if (oauthConnected) {
       handleFullSync();
     }
   };
 
-  // Teacher Logging Out
   const handleTeacherLogout = async () => {
     if (window.confirm("คุณต้องการออกจากระบบหรือไม่?")) {
       await logout();
@@ -601,21 +476,18 @@ export default function App() {
     }
   };
 
-  // Default bulk roster data populator
   const handleBulkLoadDefaults = () => {
-    if (window.confirm("คุณแน่ใจที่จะคืนค่ารายชื่อนักเรียนเริ่มต้นทั้งหมดหรือไม่?")) {
+    if (window.confirm("คุณแน่ใจที่จะคืนค่ารายชื่อนักเรียนเริ่มต้นหรือไม่?")) {
       pushStateToSheets(DEFAULT_STUDENTS);
     }
   };
 
-  // Clear roster
   const handleClearRoster = () => {
     pushStateToSheets([]);
   };
 
   return (
     <div className="min-h-screen">
-      {/* 1. STUDENT WELCOME SCREEN */}
       {currentScreen === "student_welcome" && (
         <StudentWelcome
           students={students}
@@ -632,7 +504,6 @@ export default function App() {
         />
       )}
 
-      {/* 2. STUDENT ACTIVE EXAM CENTER */}
       {currentScreen === "student_exam" && currentStudent && (
         <StudentExamRoom
           student={currentStudent}
@@ -646,7 +517,6 @@ export default function App() {
         />
       )}
 
-      {/* 3. STUDENT EXAM SUBMISSION SUCCESS */}
       {currentScreen === "student_success" && latestSubmission && (
         <ExamSuccess
           submission={latestSubmission}
@@ -656,13 +526,10 @@ export default function App() {
             setLatestSubmission(null);
             setCurrentScreen("student_welcome");
           }}
-          onCheckStatus={() => {
-            setCurrentScreen("student_score_lookup");
-          }}
+          onCheckStatus={() => setCurrentScreen("student_score_lookup")}
         />
       )}
 
-      {/* 4. STUDENT INDIVIDUAL SCORE LOOKUP */}
       {currentScreen === "student_score_lookup" && (
         <StudentScoreLookup
           students={students}
@@ -676,7 +543,6 @@ export default function App() {
         />
       )}
 
-      {/* 5. TEACHER LOGIN CENTER */}
       {currentScreen === "teacher_login" && (
         <TeacherLogin
           onLoginSuccess={handleTeacherLoginSuccess}
@@ -684,7 +550,6 @@ export default function App() {
         />
       )}
 
-      {/* 6. TEACHER ADMINISTRATIVE DASHBOARD */}
       {currentScreen === "teacher_dashboard" && (
         <TeacherDashboard
           teacherEmail={teacherEmail}
