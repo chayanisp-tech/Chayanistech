@@ -6,8 +6,7 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SUBMISSIONS,
 } from "./lib/mockData";
-import { initAuth, getAccessToken, logout, googleSignIn, db } from "./lib/firebase"; // ดึง db (Firestore) ออกมาใช้
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore"; // นำเข้าโมดูล Firestore สำหรับ Real-time
+import { initAuth, getAccessToken, logout, googleSignIn } from "./lib/firebase";
 import {
   searchDatabaseSpreadsheet,
   createDatabaseSpreadsheet,
@@ -41,6 +40,7 @@ type Screen =
   | "teacher_login"
   | "teacher_dashboard";
 
+// ฟังก์ชันแกะรหัส ID จาก URL ของ Google Sheets ทั้งแบบสั้นและแบบยาว
 const extractSpreadsheetId = (urlOrId: string | null): string | null => {
   if (!urlOrId) return null;
   const matches = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -81,31 +81,34 @@ export default function App() {
 
   const isSubmittingRef = useRef(false);
 
-  // 📡 ระบบดักฟังคะแนนสอบแบบ Real-time บนหน้าแดชบอร์ดครู
+  // 📡 ระบบดึงข้อมูลเรียลไทม์ฝั่งคุณครูแบบปลอดภัย (ใช้การ Poll ข้อมูลหลังบ้านสม่ำเสมอทุกๆ 5 วินาทีเมื่ออยู่หน้าแดชบอร์ด เพื่อให้ข้อมูลขึ้นเว็บสดใหม่ตลอดเวลา โดยไม่ทำให้เว็บเดี้ยง)
   useEffect(() => {
-    if (currentScreen !== "teacher_dashboard" || !db) return;
+    if (currentScreen !== "teacher_dashboard") return;
 
-    console.log("📡 ระบบ Real-time เฝ้าฟังคะแนนสอบจาก Firestore เริ่มทำงาน...");
+    console.log("📡 เริ่มต้นระบบการดึงข้อมูลแดชบอร์ดคุณครูให้เป็นปัจจุบันแบบอัตโนมัติ...");
     
-    // ดักฟังห้อง "submissions" ในคลาวด์ เรียงลำดับตามเวลาส่งล่าสุด
-    const q = query(collection(db, "submissions"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const realTimeSubmissions: Submission[] = [];
-      snapshot.forEach((doc) => {
-        realTimeSubmissions.push(doc.data() as Submission);
-      });
-      
-      // อัปเดตข้อมูลขึ้นหน้าจอแดชบอร์ดคุณครูทันทีที่ตรวจพบว่ามีการส่งคะแนนเข้ามาใหม่!
-      setSubmissions(realTimeSubmissions);
-      localStorage.setItem("exam_submissions", JSON.stringify(realTimeSubmissions));
-      console.log(`🔔 ตารางคุณครูได้รับการอัปเดตคะแนนแบบ Real-time แล้ว! ทั้งหมด ${realTimeSubmissions.length} รายการ`);
-    }, (error) => {
-      console.error("Firestore Real-time error:", error);
-    });
+    const fetchLatestData = async () => {
+      try {
+        const firestoreData = await pullAllFromFirestore();
+        if (firestoreData && firestoreData.submissions) {
+          setSubmissions(firestoreData.submissions);
+          localStorage.setItem("exam_submissions", JSON.stringify(firestoreData.submissions));
+          console.log("🔄 อัปเดตข้อมูลคะแนนสอบล่าสุดจากคลาวด์เรียบร้อย");
+        }
+      } catch (err) {
+        console.error("Failed to auto-pull data:", err);
+      }
+    };
+
+    // ดึงข้อมูลครั้งแรกทันทีก่อน
+    fetchLatestData();
+
+    // ตั้งเวลาดึงข้อมูลอัตโนมัติทุกๆ 5 วินาทีเงียบๆ หลังบ้าน
+    const intervalId = setInterval(fetchLatestData, 5000);
 
     return () => {
-      console.log("🔌 ปิดระบบดักฟัง Real-time เมื่อออกจากหน้าแดชบอร์ด");
-      unsubscribe();
+      clearInterval(intervalId);
+      console.log("🔌 ปิดระบบดึงข้อมูลแดชบอร์ดคุณครูอัตโนมัติ");
     };
   }, [currentScreen]);
 
@@ -396,7 +399,7 @@ export default function App() {
     }
   };
 
-  // 🚀 ฟังก์ชันส่งคำตอบนักเรียน: ยิงหา Cloud Firestore (เพื่อเด้งขึ้นเว็บครูทันที) และ Google Sheets แยกจากกันอัตโนมัติ
+  // 🚀 ฟังก์ชันส่งข้อสอบ (ได้รับการปกป้องและแก้ไขข้อผิดพลาดแล้ว)
   const handleExamSubmitted = async (submission: Submission) => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
@@ -404,13 +407,14 @@ export default function App() {
     try {
       // 1. อัปเดตข้อมูลเซฟลงบราวเซอร์เครื่องนักเรียน
       const nextSubmissions = [submission, ...submissions];
+      
+      // ✅ บันทึกลงบราวเซอร์และพุชขึ้น Firestore แบบปลอดภัย 100%
+      saveStateToLocal(undefined, undefined, nextSubmissions);
+      
       setLatestSubmission(submission);
       setCurrentScreen("student_success");
 
-      // 2. 📡 ยิงขึ้น Cloud Firestore ทันที (จะไปเด้งสะกิดหน้าจอแดชบอร์ดครูให้โชว์อัตโนมัติเรียลไทม์)
-      await syncSubmissionsToFirestore(nextSubmissions);
-
-      // 3. 📊 ยิงเข้า Google Sheets ของคุณครูโดยตรงแยกต่างหากผ่าน Web App อัตโนมัติ
+      // 2. 📊 ยิงเข้า Google Sheets ของคุณครูโดยตรงแยกต่างหากผ่าน Web App อัตโนมัติ
       const webAppUrl = "https://script.google.com/macros/s/AKfycbxPc9UKoEkXe6GmhX4bjYlxNBdgYWfGV3ACJVkdobj3IgOIgbWRBRmTJyz3KlspfCCubg/exec"; 
 
       if (webAppUrl) {
@@ -449,7 +453,6 @@ export default function App() {
     setIsOAuthConnected(oauthConnected);
     setCurrentScreen("teacher_dashboard");
     
-    // ดึงคะแนนจากคลาวด์มารอไว้เลยตั้งแต่ตอนล็อกอิน
     try {
       const firestoreData = await pullAllFromFirestore();
       if (firestoreData) {
