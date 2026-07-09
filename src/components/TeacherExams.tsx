@@ -29,7 +29,6 @@ export default function TeacherExams({
 
   // Form fields for a new Question inside the exam
   const [qType, setQType] = useState<"choice" | "subjective">("choice");
-  // โหมดเสริมสำหรับข้อสอบอัตนัย: 'text' = พิมพ์ตอบ, 'canvas' = คัดลายมือจีนบนตารางกริด
   const [subMode, setSubMode] = useState<"text" | "canvas">("text"); 
   const [qText, setQText] = useState("");
   const [qImageUrl, setQImageUrl] = useState("");
@@ -38,11 +37,14 @@ export default function TeacherExams({
   const [qOptC, setQOptC] = useState("");
   const [qOptD, setQOptD] = useState("");
   const [qOptE, setQOptE] = useState("");
-  const [qCorrect, setQCorrect] = useState(0); // 0-4 index
+  const [qCorrect, setQCorrect] = useState(0); 
   const [qPoints, setQPoints] = useState(10);
   const [qError, setQError] = useState("");
 
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // =========================================================
+  // ⚡ ฟังก์ชันใหม่: อัปโหลดรูปตรงเข้า Google Drive อัตโนมัติ ป้องกันตัวอักษรเต็ม
+  // =========================================================
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -51,41 +53,39 @@ export default function TeacherExams({
       return;
     }
 
+    setQError("กำลังอัปโหลดรูปภาพเข้า Google Drive ของคุณครู... กรุณารอสักครู่");
+
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Compress image using canvas
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 600;
-        let width = img.width;
-        let height = img.height;
+    reader.onload = async (event) => {
+      try {
+        const base64Raw = (event.target?.result as string).split(",")[1];
+        
+        // 🛑 คุณครูนำลิงก์ URL ที่ได้จากขั้นตอนทำให้ใช้งานได้ (Deploy) มาวางแทนที่ตรงนี้ครับ 🛑
+        const GOOGLE_APPS_SCRIPT_URL = "วาง_URL_เว็บแอป_ที่ลงท้ายด้วย_/exec_ตรงนี้ครับ";
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
+        const driveResponse = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            file: base64Raw,
+            filename: `exam-${Date.now()}-${file.name}`,
+            mimetype: file.type
+          })
+        });
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-          setQImageUrl(compressedBase64);
+        const result = await driveResponse.json();
+        
+        if (result.status === "success") {
+          setQImageUrl(result.fileUrl); // บันทึกเป็นลิงก์สั้น ทรงประสิทธิภาพ ไม่ทำลายเซลล์ Excel
+          setQError(""); 
+          alert("🎉 อัปโหลดรูปภาพเข้า Google Drive สำเร็จเรียบร้อย!");
         } else {
-          setQImageUrl(event.target?.result as string);
+          setQError("❌ อัปโหลดไม่สำเร็จ: " + result.message);
         }
-      };
-      img.src = event.target?.result as string;
+      } catch (err) {
+        console.error(err);
+        setQError("❌ เกิดข้อผิดพลาดในการเชื่อมต่อกับ Google Drive กรุณาตรวจสอบสิทธิ์เว็บแอป");
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -108,7 +108,6 @@ export default function TeacherExams({
           return;
         }
 
-        // Search header row
         const headers = jsonData[0].map((h) => String(h || "").trim().toLowerCase());
 
         const findColIndex = (keywords: string[]) => {
@@ -145,7 +144,6 @@ export default function TeacherExams({
             const typeStr = String(row[typeIdx]).toLowerCase();
             if (typeStr.includes("subjective") || typeStr.includes("อัตนัย") || typeStr.includes("เขียน")) {
               qTypeVal = "subjective";
-              // ถ้าระบุคีย์เวิร์ดคัด/วาด/ลายมือ ให้เป็น canvas นอกนั้นเป็นพิมพ์ตอบ text
               if (typeStr.includes("คัด") || typeStr.includes("วาด") || typeStr.includes("ลายมือ")) {
                 subjectiveModeVal = "canvas";
               }
@@ -175,7 +173,6 @@ export default function TeacherExams({
               else if (correctStr === "D" || correctStr === "4") ansIdx = 3;
               else if (correctStr === "E" || correctStr === "5") ansIdx = 4;
               else {
-                // Check if string matches option text
                 const matchedIdx = options.findIndex((opt) => opt.toLowerCase() === correctStr.toLowerCase());
                 if (matchedIdx !== -1) {
                   ansIdx = matchedIdx;
@@ -199,7 +196,6 @@ export default function TeacherExams({
             imageUrl: qImgVal || undefined,
             options,
             answerIndex: qTypeVal === "choice" ? ansIdx : -1,
-            // เพิ่มการระบุโหมดอัตนัยที่จำแนกแล้ว
             ...(qTypeVal === "subjective" ? { subjectiveMode: subjectiveModeVal } : {}),
           });
         }
@@ -207,7 +203,7 @@ export default function TeacherExams({
         if (importedQuestions.length > 0) {
           setQuestions((prev) => [...prev, ...importedQuestions]);
           alert(`นำเข้าคำถามสำเร็จทั้งหมด ${importedQuestions.length} ข้อเรียบร้อยแล้ว!`);
-          e.target.value = ""; // reset file input
+          e.target.value = ""; 
         } else {
           alert("ไม่พบคำถามที่ถูกต้องสำหรับการนำเข้าในไฟล์นี้");
         }
@@ -243,13 +239,11 @@ export default function TeacherExams({
       points: Number(qPoints),
       type: qType,
       imageUrl: qImageUrl || undefined,
-      // บันทึกแยกโหมดลงฐานข้อมูลคำถาม เพื่อให้หน้าสอบนักเรียนแสดงผลช่องกรอกข้อมูลหรือหน้าแคนวาสให้ตรงจุด
       ...(qType === "subjective" ? { subjectiveMode: subMode } : {}),
     };
 
     setQuestions([...questions, newQ]);
     
-    // Reset question inputs for next question
     setQText("");
     setQImageUrl("");
     setQOptA("");
@@ -292,7 +286,6 @@ export default function TeacherExams({
       onAddExam(newExam);
     }
     
-    // Reset Form
     setTitle("");
     setCourseCode("");
     setDescription("");
@@ -329,7 +322,6 @@ export default function TeacherExams({
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ข้อสอบวิชาภาษาจีน</h1>
@@ -349,7 +341,6 @@ export default function TeacherExams({
       </div>
 
       {isCreating ? (
-        /* Create/Edit Exam View */
         <div className="bg-white border border-[#e0bfbc] rounded-3xl p-6 md:p-8 shadow-sm space-y-8">
           <div>
             <h3 className="text-xl font-bold text-[#251817]">
@@ -363,7 +354,6 @@ export default function TeacherExams({
           </div>
 
           <form onSubmit={handleSaveExam} className="space-y-6">
-            {/* Meta Data */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1">
                 <label htmlFor="examTitleInput" className="block text-xs font-bold text-[#59413f]">
@@ -425,7 +415,6 @@ export default function TeacherExams({
               />
             </div>
 
-            {/* Questions list display */}
             <div className="border-t border-[#e0bfbc]/30 pt-6">
               <h4 className="text-sm font-bold text-[#251817] mb-4">
                 รายการข้อสอบในชุด ({questions.length} ข้อ)
@@ -489,7 +478,6 @@ export default function TeacherExams({
               )}
             </div>
 
-            {/* Question Import Box */}
             <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-3 shadow-sm">
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">table_view</span>
@@ -517,14 +505,12 @@ export default function TeacherExams({
               </div>
             </div>
 
-            {/* Question Builder Box */}
             <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-4">
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1">
                 <span className="material-symbols-outlined">add_circle</span>
                 สร้างคำถามทีละข้อ
               </h5>
 
-              {/* Question Type Selector */}
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-[#59413f]">
                   ประเภทข้อสอบ (Question Type)
@@ -553,7 +539,6 @@ export default function TeacherExams({
                 </div>
               </div>
 
-              {/* เพิ่มตัวเลือกย่อยเมื่อครูเลือกแบบ "อัตนัย" เพื่อไม่ให้โจทย์หนึ่งข้อต้องทำทั้งสองอย่างปนกัน */}
               {qType === "subjective" && (
                 <div className="p-3.5 bg-white border border-[#e0bfbc]/60 rounded-2xl space-y-1.5 animate-fade-in">
                   <label className="block text-xs font-bold text-[#8e171c]">รูปแบบการตอบที่ต้องการในข้อนี้:</label>
@@ -596,12 +581,12 @@ export default function TeacherExams({
                 />
               </div>
 
-              {/* Image upload / URL for the question */}
+              {/* 📸 พาร์ทอัปโหลดรูปแบบใหม่ เชื่อมโยง Google Drive อัตโนมัติ */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white/50 border border-[#e0bfbc]/40 rounded-2xl">
                 <div className="space-y-1">
                   <label htmlFor="qImageFileInput" className="block text-xs font-bold text-[#59413f] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">image</span>
-                    อัปโหลดรูปภาพประกอบ (เลือกไฟล์จากเครื่อง)
+                    <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
+                    อัปโหลดเข้า Google Drive อัตโนมัติ (เลือกไฟล์จากเครื่อง)
                   </label>
                   <input
                     id="qImageFileInput"
@@ -614,12 +599,12 @@ export default function TeacherExams({
                 <div className="space-y-1">
                   <label htmlFor="qImageUrlInput" className="block text-xs font-bold text-[#59413f] flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">link</span>
-                    หรือระบุที่อยู่ลิงก์รูปภาพ (Image URL)
+                    ที่อยู่ลิงก์รูปภาพ (ระบบเติมให้อัตโนมัติ หรือระบุเองได้)
                   </label>
                   <input
                     id="qImageUrlInput"
                     type="text"
-                    placeholder="เช่น https://example.com/image.jpg"
+                    placeholder="ลิงก์จาก Google Drive จะแสดงตรงนี้"
                     value={qImageUrl}
                     onChange={(e) => setQImageUrl(e.target.value)}
                     className="w-full px-4 py-1.5 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-xs font-semibold text-[#251817] bg-white"
@@ -636,13 +621,12 @@ export default function TeacherExams({
                     >
                       <span className="material-symbols-outlined text-[14px]">close</span>
                     </button>
-                    <p className="text-[10px] text-[#8c706e] font-semibold mb-1">ตัวอย่างรูปภาพประกอบคำถาม:</p>
+                    <p className="text-[10px] text-[#8c706e] font-semibold mb-1">ตัวอย่างรูปภาพที่อยู่บน Google Drive ของครู:</p>
                     <img src={qImageUrl} alt="Preview" className="max-h-[180px] rounded-lg object-contain shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
                   </div>
                 )}
               </div>
 
-              {/* Choices (only show for "choice" type) */}
               {qType === "choice" ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -706,7 +690,6 @@ export default function TeacherExams({
                   </div>
                 </div>
               ) : (
-                /* แก้ไขข้อความจุดนี้ตามที่แจ้ง: ชี้แจงเรื่องการทำงานแยกโหมดที่เหมาะสม */
                 <div className="p-4 bg-[#fffaec] border border-[#ffe0b2] rounded-2xl flex items-start gap-2.5 text-xs text-[#b78103] font-medium animate-fade-in">
                   <span className="material-symbols-outlined shrink-0 text-[18px]">info</span>
                   <div>
@@ -718,7 +701,6 @@ export default function TeacherExams({
                 </div>
               )}
 
-              {/* Correct option & Score points */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qType === "choice" && (
                   <div className="space-y-1">
@@ -755,7 +737,11 @@ export default function TeacherExams({
                 </div>
               </div>
 
-              {qError && <p className="text-xs text-red-600 font-bold">{qError}</p>}
+              {qError && (
+                <p className={`text-xs font-bold ${qError.includes("สำเร็จ") ? "text-green-600" : qError.includes("กำลัง") ? "text-amber-600" : "text-red-600"}`}>
+                  {qError}
+                </p>
+              )}
 
               <button
                 type="button"
@@ -767,7 +753,6 @@ export default function TeacherExams({
               </button>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex justify-end gap-3 pt-4 border-t border-[#e0bfbc]/30">
               <button
                 type="button"
@@ -786,7 +771,6 @@ export default function TeacherExams({
           </form>
         </div>
       ) : (
-        /* Exams Repository Grid List View */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {exams.length === 0 ? (
             <div className="col-span-full py-16 text-center bg-white border border-[#e0bfbc] rounded-3xl">
