@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
 
@@ -24,8 +24,8 @@ export default function StudentExamRoom({
   const [isExamStarted, setIsExamStarted] = useState(false);
 
   // Sync answers and exam to refs for cheat detection event listeners
-  const answersRef = React.useRef(answers);
-  const selectedExamRef = React.useRef(selectedExam);
+  const answersRef = useRef(answers);
+  const selectedExamRef = useRef(selectedExam);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -175,15 +175,17 @@ export default function StudentExamRoom({
   };
 
   const handleSubmitExam = (isTimeUp = false) => {
-    if (!selectedExam) return;
+    const exam = selectedExamRef.current;
+    if (!exam) return;
 
+    const currentAnswers = answersRef.current;
     let totalPoints = 0;
     let autoScore = 0;
     let actualAnsweredCount = 0;
 
-    selectedExam.questions.forEach((q) => {
+    exam.questions.forEach((q) => {
       totalPoints += q.points;
-      const ans = answers[q.id];
+      const ans = currentAnswers[q.id];
       if (q.type === "subjective") {
         if (ans && (ans.text?.trim() || ans.drawing)) {
           actualAnsweredCount++;
@@ -199,7 +201,7 @@ export default function StudentExamRoom({
     });
 
     if (!isTimeUp) {
-      const unansweredCount = selectedExam.questions.length - actualAnsweredCount;
+      const unansweredCount = exam.questions.length - actualAnsweredCount;
       let confirmMsg = "คุณแน่ใจหรือไม่ที่จะส่งข้อสอบ? เมื่อส่งแล้วจะไม่สามารถแก้ไขคำตอบได้อีก";
       if (unansweredCount > 0) {
         confirmMsg = `คุณยังไม่ได้ตอบคำถามอีก ${unansweredCount} ข้อ แน่ใจหรือไม่ที่จะส่งข้อสอบในตอนนี้?`;
@@ -216,17 +218,19 @@ export default function StudentExamRoom({
       studentId: student.id,
       studentName: student.name,
       studentClassName: student.className,
-      examId: selectedExam.id,
-      examTitle: selectedExam.title,
+      examId: exam.id,
+      examTitle: exam.title,
       score: autoScore,
       totalPoints: totalPoints,
       answeredCount: actualAnsweredCount,
-      totalQuestions: selectedExam.questions.length,
+      totalQuestions: exam.questions.length,
       submittedAt: new Date().toISOString(),
       status: "สมบูรณ์",
-      answers: answers,
+      answers: currentAnswers,
     };
 
+    setIsExamStarted(false);
+    setSelectedExam(null);
     onExamSubmitted(newSubmission);
   };
 
