@@ -313,6 +313,7 @@ export default function App() {
     }
   };
 
+ // 🔄 ระบบซิงค์ข้อมูลเวอร์ชันฉลาด: ดึงรายชื่อจาก Sheets มาอัปเดตบนเว็บเสมอ ป้องกันเว็บไปลบ Sheets
   const handleFullSync = async (forceToken?: string) => {
     const token = forceToken || getAccessToken();
     if (!token) {
@@ -335,6 +336,10 @@ export default function App() {
 
       if (!sheetId) throw new Error("ล้มเหลวในการดึงข้อมูลหรือจัดสร้างสเปรดชีต");
 
+      // 📥 1. ดึงข้อมูลล่าสุดจากใน Google Sheets ของคุณครูมาก่อนเสมอ
+      const fetched = await fetchFromSheets(token, sheetId);
+      
+      // ดึงข้อมูลในเครื่องปัจจุบันมารอไว้
       const currentLocals = {
         students: JSON.parse(localStorage.getItem("exam_students") || "[]"),
         exams: JSON.parse(localStorage.getItem("exam_exams") || "[]"),
@@ -342,23 +347,16 @@ export default function App() {
         settings: JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)),
       };
 
-      const fetched = await fetchFromSheets(token, sheetId);
-      let mergedStudents = currentLocals.students;
-      let mergedExams = currentLocals.exams;
-      let mergedSubmissions = currentLocals.submissions;
-      let mergedSettings = currentLocals.settings;
+      // 🧠 ตรวจสอบความฉลาด: ถ้าใน Google Sheets มีรายชื่อนักเรียน ให้ดึงจาก Sheets มาแสดงบนเว็บทันที!
+      let mergedStudents = fetched && fetched.students && fetched.students.length > 0 ? fetched.students : currentLocals.students;
+      let mergedExams = fetched && fetched.exams && fetched.exams.length > 0 ? fetched.exams : currentLocals.exams;
+      let mergedSubmissions = fetched && fetched.submissions && fetched.submissions.length > 0 ? fetched.submissions : currentLocals.submissions;
+      let mergedSettings = fetched && fetched.settings ? { ...currentLocals.settings, ...fetched.settings } : currentLocals.settings;
 
-      if (fetched) {
-        const isSheetEmpty = fetched.students.length === 0 && fetched.exams.length === 0 && fetched.submissions.length === 0;
-        if (!isSheetEmpty) {
-          mergedStudents = fetched.students;
-          mergedExams = fetched.exams;
-          mergedSubmissions = fetched.submissions;
-          mergedSettings = { ...currentLocals.settings, ...fetched.settings };
-        }
-      }
-
+      // 💾 2. บันทึกข้อมูลที่ดึงมาจาก Sheets ลงในระบบหน้าเว็บแดชบอร์ด
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
+      
+      // 📤 3. ส่งข้อมูลกลับไปซิงค์เพื่อความชัวร์ (โดยที่ข้อมูลรายชื่อนักเรียนจะไม่หายเพราะเราดึงมาเติมแล้ว)
       await syncLocalToSheets(token, sheetId, mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
 
       const nextSync: SyncStatus = {
@@ -370,6 +368,8 @@ export default function App() {
       };
       setSyncStatus(nextSync);
       localStorage.setItem("exam_sync_status", JSON.stringify(nextSync));
+      
+      console.log("✅ ซิงค์ข้อมูลฉลาดเรียบร้อย: ดึงรายชื่อนักเรียนจาก Sheets เข้าสู่แดชบอร์ดสำเร็จ!");
     } catch (err: any) {
       console.error("Full Sync Error:", err);
       let userFriendlyError = err?.message || "เกิดข้อผิดพลาดในการซิงค์ข้อมูล";
