@@ -160,7 +160,37 @@ export default function StudentExamRoom({
   }, [isExamStarted, selectedExam, secondsRemaining]);
 
   const handleStartExam = (exam: Exam) => {
-    setSelectedExam(exam);
+    // ก. สลับลำดับข้อสอบทั้งหมด
+    let randomizedQuestions = shuffleArray(exam.questions);
+
+    // ข. วนลูปเพื่อสลับชอยส์ในแต่ละข้อ (เฉพาะข้อปรนัย)
+    randomizedQuestions = randomizedQuestions.map((q) => {
+      if (q.type === "objective" && q.options && q.options.length > 0) {
+        // ผูกชอยส์เดิมเข้ากับสถานะว่าข้อไหนคือข้อที่ถูก
+        const mappedOptions = q.options.map((opt, idx) => ({
+          text: opt,
+          isCorrect: idx === q.answerIndex,
+        }));
+        
+        // สลับลำดับชอยส์
+        const shuffledOptions = shuffleArray(mappedOptions);
+        
+        // หาว่าข้อที่ถูกต้อง ย้ายไปอยู่ Index ที่เท่าไหร่แล้ว
+        const newAnswerIndex = shuffledOptions.findIndex(opt => opt.isCorrect);
+
+        return {
+          ...q,
+          options: shuffledOptions.map(opt => opt.text),
+          answerIndex: newAnswerIndex, // อัปเดตเฉลยให้ตรงกับชอยส์ที่ถูกสลับ
+        };
+      }
+      return q;
+    });
+
+    // ค. นำข้อสอบที่สลับแล้วไปใช้งาน
+    const randomizedExam = { ...exam, questions: randomizedQuestions };
+
+    setSelectedExam(randomizedExam); // ใช้อันที่สลับแล้ว
     setAnswers({});
     setCurrentQuestionIndex(0);
     setSecondsRemaining(exam.timeLimitMinutes * 60);
