@@ -11,6 +11,7 @@ export interface Question {
   answerIndex: number; // 0-based index
   points: number;
   type?: "choice" | "subjective";
+  subjectiveInputType?: "text" | "canvas"; // 🌟 บรรทัดที่เพิ่มเข้ามาใหม่
   imageUrl?: string;
 }
 
