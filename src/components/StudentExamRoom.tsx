@@ -505,29 +505,37 @@ export default function StudentExamRoom({
               {/* Option Choices or Subjective Text/Drawing input */}
               {currentQuestion.type === "subjective" ? (
                 <div className="space-y-6">
-                  {/* Text area for typing answer */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-[#59413f]">
-                      1. พิมพ์คำตอบบรรยาย (Text Answer)
-                    </label>
-                    <textarea
-                      placeholder="พิมพ์อธิบายคำตอบของคุณที่นี่..."
-                      value={answers[currentQuestion.id]?.text || ""}
-                      onChange={(e) => handleSubjectiveTextChange(currentQuestion.id, e.target.value)}
-                      className="w-full px-5 py-4 rounded-3xl border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] h-36 resize-none shadow-inner"
-                    />
-                  </div>
+{/* 🟢 แสดงกล่องพิมพ์ข้อความ: เมื่อครูไม่ได้ตั้งค่า หรือตั้งเป็น "text" */}
+                  {(!currentQuestion.subjectiveMode || currentQuestion.subjectiveMode === "text") && (
+                    <div className="space-y-2 animate-fade-in">
+                      <label className="block text-xs font-bold text-[#59413f]">
+                        พิมพ์คำตอบบรรยาย (Text Answer)
+                      </label>
+                      <textarea
+                        placeholder="พิมพ์อธิบายคำตอบของคุณที่นี่..."
+                        value={answers[currentQuestion.id]?.text || ""}
+                        onChange={(e) => handleSubjectiveTextChange(currentQuestion.id, e.target.value)}
+                        className="w-full px-5 py-4 rounded-3xl border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] h-36 resize-none shadow-inner"
+                      />
+                    </div>
+                  )}
 
-                  {/* Canvas for drawing response */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-[#59413f]">
-                      2. กระดานวาดเขียน / วาดภาพส่งประกอบคำตอบ (Drawing Canvas)
-                    </label>
-                    <DrawingCanvas
-                      value={answers[currentQuestion.id]?.drawing || ""}
-                      onChange={(dataUrl) => handleSubjectiveDrawingChange(currentQuestion.id, dataUrl)}
-                    />
-                  </div>
+                  {/* 🔴 แสดงกระดานวาดรูป: เมื่อครูตั้งค่าเป็น "canvas" เท่านั้น */}
+                  {currentQuestion.subjectiveMode === "canvas" && (
+                    <div className="space-y-2 animate-fade-in">
+                      <label className="block text-xs font-bold text-[#59413f]">
+                        ตารางคัดอักษรจีน
+                      </label>
+                      <DrawingCanvas
+                        value={answers[currentQuestion.id]?.drawing || ""}
+                        onChange={(dataUrl) => handleSubjectiveDrawingChange(currentQuestion.id, dataUrl)}
+                      />
+                      <p className="text-[11px] text-[#8c706e] flex items-center gap-1 mt-2">
+                        <span className="material-symbols-outlined text-[14px] text-[#e5a040]">lightbulb</span>
+                        คำแนะนำ: คัดตัวอักษรให้อยู่ในช่องสี่เหลี่ยมให้สมดุล สวยงาม
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
