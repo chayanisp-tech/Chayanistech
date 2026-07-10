@@ -286,13 +286,6 @@ export default function StudentWelcome({
             </div>
           </div>
         </div>
-
-        {/* Contextual Helper Chips */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2">
-          <span className="px-4 py-1.5 bg-[#ffe9e7] rounded-full text-[11px] font-semibold text-[#8f4a46] flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">timer</span> สอบภาษาจีน 1/2569
-          </span>
-        </div>
       </main>
 
       {/* Footer Information */}
