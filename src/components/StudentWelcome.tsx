@@ -83,11 +83,12 @@ export default function StudentWelcome({
       {/* Top Navigation Bar */}
       <header className="fixed top-0 left-0 w-full z-50 bg-[#fff8f7] border-b border-[#e0bfbc]/30 h-16">
         <div className="flex justify-between items-center px-6 h-full w-full max-w-7xl mx-auto">
+          {/* 🌟 1) ปรับโลโก้และชื่อแบรนด์ฝั่งซ้ายเป็น "ห้องเรียนเหล่าซรือแบมแบม" */}
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#8e171c] text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-              school
-            </span>
-            <span className="text-xl font-bold text-[#8e171c] tracking-tight">ChineseEdutest</span>
+            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" onError={(e) => {
+              (e.currentTarget as HTMLElement).style.display = 'none';
+            }} />
+            <span className="text-xl font-bold text-[#8e171c] tracking-tight">ห้องเรียนเหล่าซรือแบมแบม</span>
           </div>
           <div className="flex items-center gap-4">
             <button
@@ -118,18 +119,21 @@ export default function StudentWelcome({
 
         {/* Student Access Card */}
         <div className="relative z-10 w-full max-w-[480px] bg-white border border-[#e0bfbc]/60 rounded-3xl p-8 shadow-sm">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-[#ffdad7] text-[#8e171c] mb-4">
-              <span className="material-symbols-outlined text-[40px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                verified_user
-              </span>
+          
+          {/* 🌟 2) ปรับการ์ดต้อนรับตรงกลาง */}
+          <div className="text-center mb-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-[#ffdad7] text-[#8e171c] mb-4 p-3 shadow-inner">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => {
+                e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='40' viewBox='0 -960 960 960' width='40'%3E%3Cpath fill='%238e171c' d='m480-120-320-120v-380l320-120 320 120v380L480-120Z'/%3E%3C/svg%3E";
+              }} />
             </div>
-            <h1 className="text-2xl font-bold text-[#251817] mb-1">ยินดีต้อนรับสู่ระบบสอบออนไลน์</h1>
-            <p className="text-sm text-[#59413f]">กรุณาระบุตัวตนเพื่อเริ่มทำข้อสอบกลางภาค 1/2569</p>
+            <h1 className="text-2xl font-black text-[#251817] mb-1 tracking-tight">ห้องเรียนเหล่าซรือแบมแบม</h1>
+            <p className="text-sm font-bold text-[#8e171c] mb-1">ยินดีต้อนรับสู่ระบบการทดสอบภาษาจีนออนไลน์</p>
+            <p className="text-xs font-semibold text-[#59413f]">กรุณาระบุตัวตนเพื่อเริ่มทำข้อสอบกลางภาค 1/2569</p>
           </div>
 
           {/* Database & Sheets Sync Status Panel */}
-          <div className="mt-4 mb-6 text-left">
+          <div className="mt-4 mb-4 text-left">
             {isLoadingPublicData && (
               <div className="flex flex-col items-center justify-center p-4 bg-amber-50/50 rounded-2xl border border-amber-200/50 animate-pulse">
                 <div className="w-6 h-6 border-2 border-[#8e171c] border-t-transparent rounded-full animate-spin mb-2"></div>
@@ -194,6 +198,29 @@ export default function StudentWelcome({
             )}
           </div>
 
+          {/* ⚠️ 3) เพิ่มกล่องแจ้งเตือนระบบป้องกันการทุจริตและการใช้ AI ล่าสุด (อยู่เหนือฟอร์มพอดี) */}
+          <div className="p-4 bg-[#fffaf0] border border-[#f5e2b3] rounded-2xl text-left text-xs text-[#7c5e10] space-y-2.5 mb-6 shadow-sm">
+            <p className="font-bold flex items-center gap-1.5 text-[#8e171c] text-sm">
+              <span className="material-symbols-outlined text-[18px]">gavel</span>
+              ข้อปฏิบัติสำคัญและระบบตรวจสอบการทุจริต (Anti-Cheating)
+            </p>
+            <ul className="list-disc list-inside space-y-1.5 font-medium text-[#59413f] leading-relaxed">
+              <li>
+                <span className="font-bold text-[#8e171c]">ระบบตรวจจับการสลับหน้าจอ:</span> <span className="underline">ห้ามกดออกจากเบราว์เซอร์หรือสลับไปแท็บอื่นเด็ดขาด</span> โปรดระมัดระวังการเผลอคลิกออก หากระบบตรวจพบ นักเรียนจะถูก <span className="font-bold text-[#ba1a1a]">"เด้งออกจากห้องสอบทันที"</span>
+              </li>
+              <li>
+                <span className="font-bold text-[#8e171c]">สิทธิ์การเข้าสอบใหม่:</span> หากถูกระบบเด้งออก จะได้รับโอกาสกลับเข้าห้องสอบเพื่อแก้ตัวได้ <span className="font-bold text-[#8e171c] underline">อีกเพียง 1 ครั้งเท่านั้น</span> โดยระบบจะยังคงส่งประวัติและบันทึกข้อมูลการทุจริตไปยังเหล่าซรือโดยอัตโนมัติ
+              </li>
+              <li>
+                <span className="font-bold text-[#8e171c]">ห้ามใช้เครื่องมือช่วยตอบ:</span> ห้ามมิให้ใช้ AI (ปัญญาประดิษฐ์), เว็บไซต์แปลภาษา หรือคัดลอก/วาง (Copy-Paste) เพื่อค้นหาคำตอบในระหว่างการทดสอบ
+              </li>
+            </ul>
+            <p className="text-[10px] text-[#ba1a1a] font-bold pt-2 border-t border-[#f5e2b3] text-center leading-normal">
+              *การพยายามทุจริตหรือทำผิดกฎเกณฑ์ จะมีผลต่อการพิจารณาคะแนนสอบรายวิชานี้เป็น 0 ทันที*
+            </p>
+          </div>
+
+          {/* Form กรอกรหัสนักเรียน */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <label htmlFor="studentId" className="block text-xs font-semibold text-[#59413f] ml-1">
@@ -271,7 +298,7 @@ export default function StudentWelcome({
       {/* Footer Information */}
       <footer className="py-6 px-6 border-t border-[#e0bfbc]/20">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-[#59413f]">
-          <div>© 2026 ChineseEdutest (Thailand). สงวนลิขสิทธิ์</div>
+          <div>© 2026 ห้องเรียนเหล่าซรือแบมแบม (Thailand). สงวนลิขสิทธิ์</div>
           <div className="flex gap-6">
             <a href="#" className="hover:text-[#8e171c] transition-colors">
               นโยบายความเป็นส่วนตัว
