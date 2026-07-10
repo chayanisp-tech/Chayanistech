@@ -8,10 +8,13 @@ export interface Question {
   id: string;
   text: string;
   options: string[];
-  answerIndex: number; // 0-based index
+  answerIndex: number; 
   points: number;
   type?: "choice" | "subjective";
-  subjectiveInputType?: "text" | "canvas"; // 🌟 บรรทัดที่เพิ่มเข้ามาใหม่
+  
+  // 🌟 เปลี่ยนชื่อเป็น subjectiveMode ครับ
+  subjectiveMode?: "text" | "canvas"; 
+  
   imageUrl?: string;
 }
 
