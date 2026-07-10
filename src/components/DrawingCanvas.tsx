@@ -10,9 +10,9 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
   const [isDrawing, setIsDrawing] = useState(false);
 
   // กำหนดขนาดและโครงสร้างของตารางคัดจีน
-  const COLS = 6;      // 6 ช่องต่อแถว
-  const ROWS = 2;      // 2 แถว
-  const BOX_SIZE = 80; // ขนาดของแต่ละช่อง (80x80 px กำลังพอดีมือสำหรับเขียน)
+  const COLS = 5;       // เปลี่ยนเป็น 5 ช่อง
+  const ROWS = 1;       // เปลี่ยนเป็น 1 แถว
+  const BOX_SIZE = 100; // เพิ่มขนาดช่องให้ใหญ่ขึ้น (จาก 80 เป็น 100 px หรือปรับได้ตามต้องการครับ)
   
   const canvasWidth = COLS * BOX_SIZE; // 480 px
   const canvasHeight = ROWS * BOX_SIZE; // 160 px
@@ -198,7 +198,7 @@ export default function DrawingCanvas({ value, onChange }: DrawingCanvasProps) {
 
       <div className="flex justify-between items-center w-full px-2">
         <span className="text-[11px] font-bold text-[#8c706e]">
-          💡 แนะนำ: คัดตัวอักษรเรียงจากซ้ายไปขวา (จุได้สูงสุด 12 ตัวอักษร)
+          💡 แนะนำ: คัดตัวอักษรเรียงจากซ้ายไปขวา
         </span>
         <button
           type="button"
