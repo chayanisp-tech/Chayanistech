@@ -63,14 +63,9 @@ export default function ExamSuccess({
               <span className="material-symbols-outlined text-[18px]">alarm</span>
               <span>00:00:00</span>
             </div>
-            <div className="w-10 h-10 rounded-full overflow-hidden border border-[#e0bfbc]">
-              <img
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop"
-                alt="Profile"
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
-              />
-            </div>
+<div className="w-10 h-10 rounded-full border border-[#e0bfbc] bg-[#fbe3e0] text-[#8e171c] flex items-center justify-center shadow-sm shrink-0">
+        <span className="material-symbols-outlined text-[22px]">person</span>
+      </div>
           </div>
         </div>
       </header>
