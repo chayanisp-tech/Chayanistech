@@ -26,9 +26,12 @@ export default function TeacherSettings({
   const [timezone, setTimezone] = useState(settings.timezone);
   const [startDuration, setStartDuration] = useState(settings.startDuration);
 
-  const handleSave = (e: React.FormEvent) => {
+ const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateSettings({
+    
+    // 1. รวมข้อมูลที่ถูกแก้ไขทั้งหมด
+    const updatedSettings = {
+      ...settings, // ดึงการตั้งค่าเดิมมาด้วย
       teacherName,
       teacherEmail,
       role,
@@ -37,9 +40,16 @@ export default function TeacherSettings({
       aiProctor,
       plagiarismCheck,
       timezone,
-      startDuration,
-    });
-    alert("บันทึกการตั้งค่าระบบเรียบร้อยแล้ว!");
+      startDuration
+    };
+
+    // 2. ส่งข้อมูลกลับไปอัปเดตในระบบ (โค้ดเดิมของคุณ)
+    onUpdateSettings(updatedSettings);
+
+    // 3. เพิ่มคำสั่งนี้เพื่อเซฟลงเครื่อง! (ข้อมูลจะไม่หายตอนรีเฟรช)
+    localStorage.setItem("savedTeacherSettings", JSON.stringify(updatedSettings));
+    
+    alert("บันทึกการตั้งค่าเรียบร้อยแล้ว!");
   };
 
   return (
