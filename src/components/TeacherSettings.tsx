@@ -256,68 +256,6 @@ export default function TeacherSettings({
             </div>
           </div>
 
-          {/* 4. Active Courses List */}
-          <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#8e171c]">import_contacts</span>
-                คอร์สที่กำลังเปิดสอน
-              </h3>
-              <button
-                type="button"
-                onClick={() => alert("ระบบกำลังโหลดข้อมูลวิชาสอนเพิ่มเติม...")}
-                className="px-4 py-1.5 border border-[#e0bfbc] hover:bg-[#ffe9e7] text-[#8e171c] font-bold text-xs rounded-full transition-all"
-              >
-                จัดการทั้งหมด
-              </button>
-            </div>
-
-            <div className="space-y-3.5">
-              {/* Course 1 */}
-              <div className="p-4 border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-center hover:bg-[#fff8f7] transition-all">
-                <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-full bg-[#ffdad7] text-[#8e171c] flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[20px]">science</span>
-                  </span>
-                  <div>
-                    <span className="block font-bold text-sm">BIO102: ชีววิทยาโมเลกุลขั้นสูง</span>
-                    <span className="block text-[11px] text-[#59413f]">นักศึกษา 248 คน • 12 ข้อสอบที่เปิดอยู่</span>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-400 text-[20px]">chevron_right</span>
-              </div>
-
-              {/* Course 2 */}
-              <div className="p-4 border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-center hover:bg-[#fff8f7] transition-all">
-                <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-full bg-[#ffdad7] text-[#8e171c] flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[20px]">gavel</span>
-                  </span>
-                  <div>
-                    <span className="block font-bold text-sm">MED305: จริยธรรมทางคลินิกและความซื่อสัตย์</span>
-                    <span className="block text-[11px] text-[#59413f]">นักศึกษา 115 คน • 4 ข้อสอบที่เปิดอยู่</span>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-400 text-[20px]">chevron_right</span>
-              </div>
-
-              {/* Course 3 */}
-              <div className="p-4 border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-center hover:bg-[#fff8f7] transition-all">
-                <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-full bg-[#ffdad7] text-[#8e171c] flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[20px]">history_edu</span>
-                  </span>
-                  <div>
-                    <span className="block font-bold text-sm">HIS201: ประวัติศาสตร์ไทยสมัยใหม่</span>
-                    <span className="block text-[11px] text-[#59413f]">นักศึกษา 84 คน • 2 ข้อสอบที่เปิดอยู่</span>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-gray-400 text-[20px]">chevron_right</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Form Action Footer */}
         <div className="flex justify-end items-center gap-6 pt-6 border-t border-[#e0bfbc]/30">
           <button
