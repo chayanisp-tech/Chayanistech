@@ -57,7 +57,10 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [settings, setSettings] = useState<SystemSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<SystemSettings>(() => {
+    const savedData = localStorage.getItem("savedTeacherSettings");
+    return savedData ? JSON.parse(savedData) : DEFAULT_SETTINGS;
+  });
 
   // Sync state
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
