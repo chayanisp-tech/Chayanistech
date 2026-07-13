@@ -7,17 +7,16 @@ import TeacherGrading from "./TeacherGrading";
 import TeacherSettings from "./TeacherSettings";
 
 // =========================================================================
-// 👥 2. ระบบเพิ่มรายชื่อคุณครูท่านอื่นเพื่อให้เข้ามาจัดการวิชาของตัวเองได้
-// คุณครูสามารถมาเพิ่ม Email, ชื่อ และรูปภาพของครูท่านอื่นตรงลิสต์นี้ได้เลยครับ 
+// 👥 ระบบเพิ่มรายชื่อคุณครูท่านอื่น
 // =========================================================================
 const ALLOWED_TEACHERS = [
   {
-    email: "chayanis@school.ac.th", // ใส่ Email ที่คุณครูใช้ล็อกอินหลัก
+    email: "chayanis@school.ac.th", 
     name: "ครูชญานิศ พลวาปี",
     defaultImg: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop"
   },
   {
-    email: "somchai@school.ac.th", // 💡 ตัวอย่าง: บัญชีครูท่านที่ 2 ที่อยากให้เข้ามาเพิ่มวิชาอื่น
+    email: "somchai@school.ac.th", 
     name: "ครูสมชาย ใจดี",
     defaultImg: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop"
   }
@@ -72,24 +71,62 @@ export default function TeacherDashboard({
 }: TeacherDashboardProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
-  // ค้นหาข้อมูลครูที่กำลังล็อกอินจากลิสต์ด้านบน (ถ้าไม่เจอจะใช้ค่าตามที่ระบบส่งมา)
   const currentTeacherConfig = ALLOWED_TEACHERS.find(t => t.email.toLowerCase() === teacherEmail.toLowerCase());
   const displayTeacherName = currentTeacherConfig ? currentTeacherConfig.name : (settings.teacherName || "คุณครูผู้ดูแล");
   
-  // 📸 ดึงรูปโปรไฟล์: ตรวจสอบว่าในฐานข้อมูลมีการเซฟลิงก์รูปใหม่ไว้ไหม ถ้าไม่มีให้ใช้รูปเริ่มต้นประจำตัว
   const defaultProfileImg = currentTeacherConfig ? currentTeacherConfig.defaultImg : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop";
-  // สมมติว่าเซฟลิ่งก์ไว้ในฟิลด์อเนกประสงค์ของ settings (เช่น แอบเก็บไว้ในชื่อสเปรดชีตหรือฟิลด์แต่งเติม) หรือดึงจาก localStorage มาร่วมด้วยเพื่อให้เปิดเครื่องไหนรูปก็ยังอยู่
   const [customImg, setCustomImg] = useState(() => {
     return localStorage.getItem(`profile_img_${teacherEmail}`) || defaultProfileImg;
   });
 
-  // ฟังก์ชันสลับเปลี่ยนรูปเมื่อคลิกที่รูปโปรไฟล์
-  const handleImageChange = () => {
-    const newUrl = prompt("คุณครูสามารถนำลิงก์รูปภาพใหม่มาวางที่นี่เพื่อเปลี่ยนรูปได้เลยครับ (ระบบจะจดจำรูปภาพนี้ไว้สำหรับบัญชีคุณครู):", customImg);
-    if (newUrl && newUrl.trim() !== "") {
-      setCustomImg(newUrl.trim());
-      localStorage.setItem(`profile_img_${teacherEmail}`, newUrl.trim());
-      alert("ปรับเปลี่ยนรูปโปรไฟล์เรียบร้อยแล้วครับ!");
+  // ☁️ ฟังก์ชันเปิดหน้าต่างเลือกรูปภาพจาก Google Drive โดยตรง (ไม่ต้องใช้ลิงก์ยาว และเซฟลงชีทได้ปลอดภัย)
+  const handleGoogleDriveImagePick = () => {
+    // ตรวจสอบก่อนว่าคุณครูเชื่อมต่อ Google ไว้หรือยัง
+    // @ts-ignore
+    if (typeof gapi === "undefined" || !syncStatus.spreadsheetId) {
+      alert("กรุณากดเชื่อมโยงบัญชี Google ที่แถบแจ้งเตือนด้านบนก่อนเลือกรูปภาพจาก Google Drive ครับ");
+      return;
+    }
+
+    try {
+      // @ts-ignore
+      const view = new google.picker.View(google.picker.ViewId.DOCS_IMAGES);
+      // @ts-ignore
+      const picker = new google.picker.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(gapi.auth.getToken().access_token)
+        .setCallback((data: any) => {
+          // @ts-ignore
+          if (data.action === google.picker.Action.PICKED) {
+            const doc = data.docs[0];
+            const fileId = doc.id;
+            // แปลงสิทธิ์เป็นลิงก์ดึงรูปภาพของ Google Drive แบบสั้น กระทัดรัด ปลอดภัยต่อ Google Sheets 
+            const googleDriveImageUrl = `https://lh3.googleusercontent.com/d/${fileId}=s150`;
+            
+            setCustomImg(googleDriveImageUrl);
+            localStorage.setItem(`profile_img_${teacherEmail}`, googleDriveImageUrl);
+            
+            // ส่งค่ากลับไปบันทึกลงฐานข้อมูลหลัก (Google Sheets) ผ่านฟังก์ชันอัปเดตของระบบ
+            onUpdateSettings({
+              ...settings,
+              teacherName: displayTeacherName // บันทึกควบคู่กันไป
+            });
+            
+            alert("เชื่อมโยงรูปโปรไฟล์จาก Google Drive สำเร็จแล้วครับ!");
+          }
+        })
+        .build();
+      picker.setVisible(true);
+    } catch (err) {
+      // แผนสำรอง: ถ้า Picker โหลดไม่สำเร็จเนื่องจากเรื่องสิทธิ์ (iFrame) จะให้กรอกรหัสไฟล์สั้นๆ แทน
+      const fallbackId = prompt("เกิดข้อขัดข้องในการเปิดหน้าต่างเลือกไฟล์ กรุณานำ 'ID ไฟล์รูปภาพ' จาก Google Drive มาวางที่นี่แทนครับ:");
+      if (fallbackId && fallbackId.trim() !== "") {
+        const cleanId = fallbackId.split("id=")[1] || fallbackId.split("/d/")[1]?.split("/")[0] || fallbackId.trim();
+        const fallbackUrl = `https://lh3.googleusercontent.com/d/${cleanId}=s150`;
+        setCustomImg(fallbackUrl);
+        localStorage.setItem(`profile_img_${teacherEmail}`, fallbackUrl);
+        alert("บันทึกรูปโปรไฟล์เรียบร้อยครับ!");
+      }
     }
   };
 
@@ -104,7 +141,7 @@ export default function TeacherDashboard({
       <aside className="w-80 border-r border-[#e0bfbc]/40 bg-white flex flex-col justify-between shrink-0 h-screen sticky top-0 hidden md:flex">
         <div className="p-6 space-y-8">
           
-          {/* Logo / Brand header */}
+          {/* Logo */}
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[#8e171c] text-3xl font-black">school</span>
             <div>
@@ -188,13 +225,13 @@ export default function TeacherDashboard({
           </nav>
         </div>
 
-        {/* 🌟 ปรับปรุงส่วนแสดงโปรไฟล์: คลิกที่รูปเพื่อกดเปลี่ยนลิงก์รูปได้เองโดยตรง */}
+        {/* 🌟 ส่วนแสดงโปรไฟล์: เลือกรูปจาก Google Drive โดยตรง ปลอดภัย ทรงประสิทธิภาพ */}
         <div className="p-6 border-t border-[#e0bfbc]/30 space-y-4 bg-[#fff8f7]/40">
           <div className="flex items-center gap-3">
             <div 
-              onClick={handleImageChange}
+              onClick={handleGoogleDriveImagePick}
               className="w-11 h-11 rounded-full overflow-hidden border border-[#e0bfbc] shrink-0 cursor-pointer relative group"
-              title="คลิกที่นี่เพื่อเปลี่ยนรูปโปรไฟล์ผู้สอน"
+              title="คลิกเพื่อเลือกไฟล์รูปภาพจาก Google Drive ของคุณครู"
             >
               <img
                 src={customImg}
@@ -203,7 +240,7 @@ export default function TeacherDashboard({
                 className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
               />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <span className="material-symbols-outlined text-white text-[16px]">edit</span>
+                <span className="material-symbols-outlined text-white text-[16px]">add_to_drive</span>
               </div>
             </div>
             <div className="min-w-0">
@@ -228,7 +265,7 @@ export default function TeacherDashboard({
         </div>
       </aside>
 
-      {/* Mobile Top Navigation Drawer fallback */}
+      {/* Mobile Header */}
       <div className="flex flex-col flex-grow min-w-0 h-screen overflow-y-auto">
         <header className="md:hidden bg-white border-b border-[#e0bfbc]/30 p-4 sticky top-0 z-40 flex justify-between items-center">
           <div className="flex items-center gap-1.5">
@@ -252,7 +289,6 @@ export default function TeacherDashboard({
             <button
               onClick={onLogout}
               className="p-1.5 border border-red-200 text-red-600 rounded-full hover:bg-red-50"
-              title="ออกจากระบบ"
             >
               <span className="material-symbols-outlined text-[16px]">logout</span>
             </button>
@@ -269,18 +305,6 @@ export default function TeacherDashboard({
               <div className="flex-grow">
                 <p className="text-xs font-bold text-[#8e171c]">เกิดข้อผิดพลาดในการเชื่อมต่อ / ซิงค์ข้อมูล</p>
                 <p className="text-xs text-[#59413f] mt-0.5">{syncStatus.error}</p>
-                {typeof window !== "undefined" && window.self !== window.top && (
-                  <p className="text-[11px] font-semibold text-[#8f4a46] mt-1.5 flex items-start gap-1">
-                    <span className="material-symbols-outlined text-[16px] shrink-0">lightbulb</span>
-                    <span>คำแนะนำ: เนื่องจากแอปทำงานอยู่ในกรอบจำลอง (iFrame) กรุณาคลิกปุ่ม <b>"เปิดในแท็บใหม่"</b> ที่มุมบนขวาของ AI Studio เพื่อใช้งานในหน้าต่างเต็มรูปแบบ แล้วทำการเชื่อมต่อซิงค์ Google Drive/Sheets อีกครั้งครับ</span>
-                  </p>
-                )}
-                {typeof window !== "undefined" && window.location.hostname.includes("vercel") && (
-                  <p className="text-[11px] font-semibold text-[#8f4a46] mt-1.5 flex items-start gap-1">
-                    <span className="material-symbols-outlined text-[16px] shrink-0">info</span>
-                    <span>คำแนะนำสำหรับ Vercel: กรุณาเพิ่มโดเมน <code className="bg-white px-1.5 py-0.5 rounded border font-mono select-all text-[#8e171c]">{window.location.hostname}</code> ในรายการ <b>Authorized domains</b> ของ Firebase Console &gt; Authentication &gt; Settings เพื่ออนุญาตให้ใช้งานเชื่อมต่อ Google ได้สำเร็จครับ</span>
-                  </p>
-                )}
               </div>
             </div>
           )}
@@ -292,11 +316,6 @@ export default function TeacherDashboard({
                 <span className="material-symbols-outlined text-[#8e171c] text-[24px] shrink-0">info</span>
                 <span className="text-xs font-medium text-[#59413f]">
                   คุณกำลังใช้ฐานข้อมูลออฟไลน์ในเบราว์เซอร์ เพื่อให้สิทธิ์เข้าถึง <b>Google Drive & Sheets</b> สำหรับจัดเก็บรายชื่อผู้เรียนและส่งประวัติคะแนนอัตโนมัติ กรุณากดเชื่อมโยง
-                  {typeof window !== "undefined" && window.self !== window.top && (
-                    <span className="block mt-1 text-[#8f4a46] font-semibold">
-                      💡 คำแนะนำ: เพื่อความถูกต้องในการเชื่อมต่อโดยไม่มีปัญาระบบบล็อกป๊อปอัป แนะนำให้คลิกปุ่ม <b>"เปิดในแท็บใหม่"</b> ที่ขวาบนก่อนกดเชื่อมโยงครับ
-                    </span>
-                  )}
                 </span>
               </div>
               <button
