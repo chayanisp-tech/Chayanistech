@@ -198,25 +198,28 @@ export default function StudentWelcome({
             )}
           </div>
 
-          {/* ⚠️ 3) เพิ่มกล่องแจ้งเตือนระบบป้องกันการทุจริตและการใช้ AI ล่าสุด (อยู่เหนือฟอร์มพอดี) */}
+{/* ⚠️ 3) กล่องแจ้งเตือนระบบป้องกันการทุจริตและการใช้ AI ล่าสุด (ฉบับเด็ดขาด) */}
           <div className="p-4 bg-[#fffaf0] border border-[#f5e2b3] rounded-2xl text-left text-xs text-[#7c5e10] space-y-2.5 mb-6 shadow-sm">
             <p className="font-bold flex items-center gap-1.5 text-[#8e171c] text-sm">
               <span className="material-symbols-outlined text-[18px]">gavel</span>
-              ข้อปฏิบัติสำคัญและระบบตรวจสอบการทุจริต (Anti-Cheating)
+              ข้อปฏิบัติสำคัญและระบบตรวจสอบการทุจริตอย่างเข้มงวด (Anti-Cheating)
             </p>
             <ul className="list-disc list-inside space-y-1.5 font-medium text-[#59413f] leading-relaxed">
               <li>
-                <span className="font-bold text-[#8e171c]">ระบบตรวจจับการสลับหน้าจอ:</span> <span className="underline">ห้ามกดออกจากเบราว์เซอร์หรือสลับไปแท็บอื่นเด็ดขาด</span> โปรดระมัดระวังการเผลอคลิกออก หากระบบตรวจพบ นักเรียนจะถูก <span className="font-bold text-[#ba1a1a]">"เด้งออกจากห้องสอบทันที"</span>
+                <span className="font-bold text-[#8e171c]">ระบบนับแต้มเตือนความปลอดภัย (3 Strikes):</span> ในระหว่างทำการทดสอบ ห้ามสลับหน้าจอ/เปลี่ยนแท็บ, ห้ามคลิกออกนอกหน้าต่างข้อสอบ, ห้ามคัดลอกข้อความ และห้ามกดปุ่มบันทึกหน้าจอ (PrintScreen) โดยเด็ดขาด 
               </li>
               <li>
-                <span className="font-bold text-[#8e171c]">สิทธิ์การเข้าสอบใหม่:</span> หากถูกระบบเด้งออก จะได้รับโอกาสกลับเข้าห้องสอบเพื่อแก้ตัวได้ <span className="font-bold text-[#8e171c] underline">อีกเพียง 1 ครั้งเท่านั้น</span> โดยระบบจะยังคงส่งประวัติและบันทึกข้อมูลการทุจริตไปยังเหล่าซรือโดยอัตโนมัติ
+                <span className="font-bold text-[#ba1a1a]">การลงโทษขั้นเด็ดขาด:</span> 
+                <br />- ทำผิดกฎ <span className="font-bold text-[#8e171c]">ครั้งที่ 1</span>: ระบบจะแจ้งเตือนพฤติกรรมเสี่ยง
+                <br />- ทำผิดกฎ <span className="font-bold text-[#8e171c]">ครั้งที่ 2</span>: ระบบจะเตือนว่า <span className="underline">"เหลืออีกครั้งสุดท้าย"</span>
+                <br />- ทำผิดกฎ <span className="font-bold text-[#ba1a1a]">ครั้งที่ 3</span>: ระบบจะทำการ <span className="font-bold text-[#ba1a1a] underline">บังคับส่งกระดาษคำตอบทันที และตัดสินว่าทุจริตการสอบ คะแนนเป็นโมฆะ (0 คะแนน)</span> พร้อมตัดสิทธิ์การเข้าสอบวิชานี้อย่างถาวร
               </li>
               <li>
-                <span className="font-bold text-[#8e171c]">ห้ามใช้เครื่องมือช่วยตอบ:</span> ห้ามมิให้ใช้ AI (ปัญญาประดิษฐ์), เว็บไซต์แปลภาษา หรือคัดลอก/วาง (Copy-Paste) เพื่อค้นหาคำตอบในระหว่างการทดสอบ
+                <span className="font-bold text-[#8e171c]">ห้ามใช้เครื่องมือช่วยตอบ:</span> ห้ามมิให้ใช้ AI, เว็บไซต์แปลภาษา หรือเปิดโปรแกรมอื่นๆ ควบคู่กับการทำข้อสอบ
               </li>
             </ul>
             <p className="text-[10px] text-[#ba1a1a] font-bold pt-2 border-t border-[#f5e2b3] text-center leading-normal">
-              *การพยายามทุจริตหรือทำผิดกฎเกณฑ์ จะมีผลต่อการพิจารณาคะแนนสอบรายวิชานี้เป็น 0 ทันที*
+              *โปรดทำข้อสอบด้วยความซื่อสัตย์ ระบบบันทึกประวัติพฤติกรรมทุกอย่างส่งตรงถึงเหล่าซรือแบบเรียลไทม์*
             </p>
           </div>
 
