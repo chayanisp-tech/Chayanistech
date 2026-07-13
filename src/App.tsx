@@ -483,9 +483,23 @@ export default function App() {
   };
 
   const handleBulkLoadDefaults = () => {
-    if (window.confirm("คุณแน่ใจที่จะคืนค่ารายชื่อนักเรียนเริ่มต้นหรือไม่?")) {
-      pushStateToSheets(DEFAULT_STUDENTS);
+    // 1. กรองเอารายชื่อตัวอย่างที่ "รหัสยังไม่ซ้ำ" กับรายชื่อที่คุณครูมีอยู่
+    const newDefaults = DEFAULT_STUDENTS.filter(
+      (defaultStudent) => !students.some((existingStudent) => existingStudent.id === defaultStudent.id)
+    );
+
+    // 2. เช็กว่าถ้ารายชื่อตัวอย่างถูกเพิ่มไปหมดแล้ว จะได้ไม่ต้องเซฟซ้ำ
+    if (newDefaults.length === 0) {
+      alert("รายชื่อตัวอย่างถูกเพิ่มเข้าระบบหมดแล้วครับ ไม่มีรายชื่อใหม่ให้เพิ่มเพิ่มเติม");
+      return;
     }
+
+    // 3. เอาข้อมูลนักเรียนเดิม (students) มาต่อท้ายด้วยข้อมูลตัวอย่างที่กรองแล้ว (newDefaults)
+    const combinedStudents = [...students, ...newDefaults];
+
+    // 4. บันทึกข้อมูลทั้งหมดกลับขึ้น Google Sheets (และอัปเดตหน้าเว็บ)
+    pushStateToSheets(combinedStudents);
+    alert("เพิ่มรายชื่อนักเรียนตัวอย่างต่อท้ายระบบเรียบร้อยแล้วครับ! 🎉");
   };
 
   const handleClearRoster = () => {
