@@ -26,12 +26,12 @@ export default function TeacherSettings({
   const [timezone, setTimezone] = useState(settings.timezone);
   const [startDuration, setStartDuration] = useState(settings.startDuration);
 
- const handleSave = (e: React.FormEvent) => {
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 1. รวมข้อมูลที่ถูกแก้ไขทั้งหมด
+    // รวมข้อมูลที่ถูกแก้ไขทั้งหมด
     const updatedSettings = {
-      ...settings, // ดึงการตั้งค่าเดิมมาด้วย
+      ...settings,
       teacherName,
       teacherEmail,
       role,
@@ -42,21 +42,10 @@ export default function TeacherSettings({
       timezone,
       startDuration
     };
-// --------------------------------------------------------
-    // ให้คัดลอก 3 บรรทัดนี้ ไปวางต่อท้ายบรรทัดที่ 44 ได้เลยครับ!
-    // --------------------------------------------------------
+
     onUpdateSettings(updatedSettings); // ส่งข้อมูลกลับไปให้ App.tsx
     localStorage.setItem("savedTeacherSettings", JSON.stringify(updatedSettings)); // บันทึกลงเครื่อง
     alert("บันทึกการตั้งค่าเรียบร้อยแล้ว!"); 
-    
-  }; // ปีกกาปิดของฟังก์ชัน handleSave
-    // 2. ส่งข้อมูลกลับไปอัปเดตในระบบ (โค้ดเดิมของคุณ)
-    onUpdateSettings(updatedSettings);
-
-    // 3. เพิ่มคำสั่งนี้เพื่อเซฟลงเครื่อง! (ข้อมูลจะไม่หายตอนรีเฟรช)
-    localStorage.setItem("savedTeacherSettings", JSON.stringify(updatedSettings));
-    
-    alert("บันทึกการตั้งค่าเรียบร้อยแล้ว!");
   };
 
   return (
@@ -106,7 +95,7 @@ export default function TeacherSettings({
               />
             </div>
 
-            {/* Role Role */}
+            {/* Role */}
             <div className="space-y-1.5">
               <label htmlFor="teacherRoleSelect" className="block text-xs font-bold text-[#59413f]">บทบาท</label>
               <select
@@ -206,9 +195,8 @@ export default function TeacherSettings({
           </div>
         </div>
 
-        {/* Bottom Grid (Scheduling & Courses) */}
+        {/* Bottom Grid (Scheduling) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
           {/* 3. Global Scheduling */}
           <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
@@ -255,6 +243,7 @@ export default function TeacherSettings({
               </div>
             </div>
           </div>
+        </div>
 
         {/* Form Action Footer */}
         <div className="flex justify-end items-center gap-6 pt-6 border-t border-[#e0bfbc]/30">
