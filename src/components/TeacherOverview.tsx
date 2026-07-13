@@ -32,9 +32,22 @@ export default function TeacherOverview({
   };
   
   // Calculate average score
-  const avgScore = submissions.length > 0 
-    ? (submissions.reduce((acc, s) => acc + (s.score / s.totalPoints) * 100, 0) / submissions.length).toFixed(1)
-    : "0.0";
+  let avgScore = "0.0";
+  if (submissions.length > 0) {
+    let totalScoreObtained = 0;
+    let totalMaxScore = 0;
+
+    submissions.forEach((sub) => {
+      totalScoreObtained += sub.score || 0;
+      // ไปค้นหาคะแนนเต็มจากตัวข้อสอบจริง (exams) โดยใช้ examId
+      const relatedExam = exams.find((e) => e.id === sub.examId);
+      totalMaxScore += relatedExam ? (relatedExam.totalScore || 0) : (sub.score || 10);
+    });
+
+    if (totalMaxScore > 0) {
+      avgScore = ((totalScoreObtained / totalMaxScore) * 100).toFixed(1);
+    }
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
