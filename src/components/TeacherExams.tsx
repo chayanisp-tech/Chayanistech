@@ -497,6 +497,24 @@ export default function TeacherExams({
               )}
             </div>
 
+            {/* --- เริ่มต้นกล่องปุ่มดาวน์โหลดเทมเพลตที่เพิ่มใหม่ --- */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 bg-gray-50 p-4 rounded-2xl border border-gray-200 w-full">
+            <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px]">cloud_download</span>
+              ดาวน์โหลดแบบฟอร์มมาตรฐานสำหรับครู (เทมเพลต)
+            </div>
+            <a 
+              href="https://docs.google.com/spreadsheets/d/1bJxpy9E4G1yx91A7cXr8RTdQ09l1M1HwF0BCwgLMt5A/copy" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[16px]">description</span>
+              กดเพื่อทำสำเนา Google Sheet
+            </a>
+          </div>
+          {/* --- สิ้นสุดกล่องปุ่มที่เพิ่มใหม่ --- */}
+            
             <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-3 shadow-sm">
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">table_view</span>
