@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Student, Exam, Submission, SystemSettings, SyncStatus } from "../types";
 import TeacherOverview from "./TeacherOverview";
 import TeacherStudents from "./TeacherStudents";
@@ -70,6 +70,9 @@ export default function TeacherDashboard({
   onLogout,
 }: TeacherDashboardProps) {
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // 📸 ตัวอ้างอิงสำหรับเรียกหน้าต่างเลือกไฟล์รูปในเครื่อง
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentTeacherConfig = ALLOWED_TEACHERS.find(t => t.email.toLowerCase() === teacherEmail.toLowerCase());
   const displayTeacherName = currentTeacherConfig ? currentTeacherConfig.name : (settings.teacherName || "คุณครูผู้ดูแล");
@@ -79,55 +82,54 @@ export default function TeacherDashboard({
     return localStorage.getItem(`profile_img_${teacherEmail}`) || defaultProfileImg;
   });
 
-  // ☁️ ฟังก์ชันเปิดหน้าต่างเลือกรูปภาพจาก Google Drive โดยตรง (ไม่ต้องใช้ลิงก์ยาว และเซฟลงชีทได้ปลอดภัย)
-  const handleGoogleDriveImagePick = () => {
-    // ตรวจสอบก่อนว่าคุณครูเชื่อมต่อ Google ไว้หรือยัง
-    // @ts-ignore
-    if (typeof gapi === "undefined" || !syncStatus.spreadsheetId) {
-      alert("กรุณากดเชื่อมโยงบัญชี Google ที่แถบแจ้งเตือนด้านบนก่อนเลือกรูปภาพจาก Google Drive ครับ");
-      return;
+  // คลิกที่รูปแล้วให้เปิดตัวเลือกไฟล์ในเครื่องทันที
+  const handleImageClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
     }
+  };
 
-    try {
-      // @ts-ignore
-      const view = new google.picker.View(google.picker.ViewId.DOCS_IMAGES);
-      // @ts-ignore
-      const picker = new google.picker.PickerBuilder()
-        .addView(view)
-        .setOAuthToken(gapi.auth.getToken().access_token)
-        .setCallback((data: any) => {
-          // @ts-ignore
-          if (data.action === google.picker.Action.PICKED) {
-            const doc = data.docs[0];
-            const fileId = doc.id;
-            // แปลงสิทธิ์เป็นลิงก์ดึงรูปภาพของ Google Drive แบบสั้น กระทัดรัด ปลอดภัยต่อ Google Sheets 
-            const googleDriveImageUrl = `https://lh3.googleusercontent.com/d/${fileId}=s150`;
-            
-            setCustomImg(googleDriveImageUrl);
-            localStorage.setItem(`profile_img_${teacherEmail}`, googleDriveImageUrl);
-            
-            // ส่งค่ากลับไปบันทึกลงฐานข้อมูลหลัก (Google Sheets) ผ่านฟังก์ชันอัปเดตของระบบ
-            onUpdateSettings({
-              ...settings,
-              teacherName: displayTeacherName // บันทึกควบคู่กันไป
-            });
-            
-            alert("เชื่อมโยงรูปโปรไฟล์จาก Google Drive สำเร็จแล้วครับ!");
-          }
-        })
-        .build();
-      picker.setVisible(true);
-    } catch (err) {
-      // แผนสำรอง: ถ้า Picker โหลดไม่สำเร็จเนื่องจากเรื่องสิทธิ์ (iFrame) จะให้กรอกรหัสไฟล์สั้นๆ แทน
-      const fallbackId = prompt("เกิดข้อขัดข้องในการเปิดหน้าต่างเลือกไฟล์ กรุณานำ 'ID ไฟล์รูปภาพ' จาก Google Drive มาวางที่นี่แทนครับ:");
-      if (fallbackId && fallbackId.trim() !== "") {
-        const cleanId = fallbackId.split("id=")[1] || fallbackId.split("/d/")[1]?.split("/")[0] || fallbackId.trim();
-        const fallbackUrl = `https://lh3.googleusercontent.com/d/${cleanId}=s150`;
-        setCustomImg(fallbackUrl);
-        localStorage.setItem(`profile_img_${teacherEmail}`, fallbackUrl);
-        alert("บันทึกรูปโปรไฟล์เรียบร้อยครับ!");
-      }
-    }
+  // 🛠️ ฟังก์ชันรับไฟล์รูปภาพ -> นำมาบีบย่อขนาดให้เล็กจิ๋ว -> แล้วแปลงเป็น Base64 สายสั้น ปลอดภัยต่อ Google Sheets
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // สร้าง Canvas เพื่อทำการวาดและบีบอัดรูปภาพ
+        const canvas = document.createElement("canvas");
+        
+        // กำหนดขนาดให้เล็กจิ๋ว (กว้าง 120px ก็เพียงพอสำหรับรูปโปรไฟล์วงกลมเล็กๆ มุมซ้ายล่างครับ)
+        const MAX_WIDTH = 120;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // บีบอัดคุณภาพรูปภาพลงเหลือ 70% (.jpeg คุณภาพ 0.7 จะได้ไฟล์ขนาดเล็กมากหลักไม่กี่ KB)
+          const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+          
+          // บันทึกลงเบราว์เซอร์
+          setCustomImg(compressedBase64);
+          localStorage.setItem(`profile_img_${teacherEmail}`, compressedBase64);
+          
+          // ซิงค์ส่งขึ้นไปเซฟที่ฐานข้อมูล Google Sheets อย่างปลอดภัย (ตัวอักษรสั้นมาก ชีทไม่พังแน่นอน)
+          onUpdateSettings({
+            ...settings,
+            teacherName: displayTeacherName
+          });
+          
+          alert("อัปโหลดและปรับขนาดรูปโปรไฟล์เรียบร้อยแล้วครับ!");
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleCreateNewExamQuick = () => {
@@ -137,6 +139,15 @@ export default function TeacherDashboard({
   return (
     <div className="min-h-screen flex bg-[#fff8f7] font-sans text-[#251817]">
       
+      {/* ซ่อนแท็กเลือกไฟล์ในเครื่องไว้เบื้องหลัง */}
+      <input 
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
       {/* 1. LEFT SIDEBAR PANEL */}
       <aside className="w-80 border-r border-[#e0bfbc]/40 bg-white flex flex-col justify-between shrink-0 h-screen sticky top-0 hidden md:flex">
         <div className="p-6 space-y-8">
@@ -225,13 +236,13 @@ export default function TeacherDashboard({
           </nav>
         </div>
 
-        {/* 🌟 ส่วนแสดงโปรไฟล์: เลือกรูปจาก Google Drive โดยตรง ปลอดภัย ทรงประสิทธิภาพ */}
+        {/* 🌟 ส่วนแสดงโปรไฟล์: กดคลิกแล้วเลือกไฟล์ภาพในคอมได้เลย แล้วระบบจะย่อรูปให้เซฟลงชีทได้ปลอดภัย */}
         <div className="p-6 border-t border-[#e0bfbc]/30 space-y-4 bg-[#fff8f7]/40">
           <div className="flex items-center gap-3">
             <div 
-              onClick={handleGoogleDriveImagePick}
+              onClick={handleImageClick}
               className="w-11 h-11 rounded-full overflow-hidden border border-[#e0bfbc] shrink-0 cursor-pointer relative group"
-              title="คลิกเพื่อเลือกไฟล์รูปภาพจาก Google Drive ของคุณครู"
+              title="คลิกเพื่อเลือกไฟล์รูปภาพจากในเครื่องคอมพิวเตอร์ของคุณครู"
             >
               <img
                 src={customImg}
@@ -240,7 +251,7 @@ export default function TeacherDashboard({
                 className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
               />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <span className="material-symbols-outlined text-white text-[16px]">add_to_drive</span>
+                <span className="material-symbols-outlined text-white text-[16px]">upload</span>
               </div>
             </div>
             <div className="min-w-0">
@@ -298,7 +309,7 @@ export default function TeacherDashboard({
         {/* 2. BODY CONTENT AREA */}
         <main className="p-6 md:p-10 max-w-7xl w-full mx-auto flex-grow space-y-8 pb-16">
           
-          {/* Sync Error Alert Overlay */}
+          {/* Sync Error Alert */}
           {syncStatus.error && (
             <div className="p-4 bg-[#fff0ef] border border-[#ffdad7] rounded-2xl flex items-start gap-3 text-left">
               <span className="material-symbols-outlined text-[#8e171c] text-[24px] shrink-0">warning</span>
@@ -309,7 +320,7 @@ export default function TeacherDashboard({
             </div>
           )}
 
-          {/* Top warning overlay if not synced with Google Sheets */}
+          {/* Top warning overlay if not synced */}
           {!syncStatus.spreadsheetId && (
             <div className="p-4 bg-[#fff0ef] border border-[#ffdad7] rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-start sm:items-center gap-3 text-left">
