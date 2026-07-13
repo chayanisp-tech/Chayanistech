@@ -42,7 +42,14 @@ export default function TeacherSettings({
       timezone,
       startDuration
     };
-
+// --------------------------------------------------------
+    // ให้คัดลอก 3 บรรทัดนี้ ไปวางต่อท้ายบรรทัดที่ 44 ได้เลยครับ!
+    // --------------------------------------------------------
+    onUpdateSettings(updatedSettings); // ส่งข้อมูลกลับไปให้ App.tsx
+    localStorage.setItem("savedTeacherSettings", JSON.stringify(updatedSettings)); // บันทึกลงเครื่อง
+    alert("บันทึกการตั้งค่าเรียบร้อยแล้ว!"); 
+    
+  }; // ปีกกาปิดของฟังก์ชัน handleSave
     // 2. ส่งข้อมูลกลับไปอัปเดตในระบบ (โค้ดเดิมของคุณ)
     onUpdateSettings(updatedSettings);
 
