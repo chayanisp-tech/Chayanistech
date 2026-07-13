@@ -229,22 +229,24 @@ export default function ExamSuccess({
 
         {/* Notice Alert */}
         <div className="mt-8 flex flex-col items-center gap-2">
-          {submission.status === "ทุจริต" ? (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-3xl p-5 max-w-lg text-xs font-semibold flex items-start gap-3 text-left">
-              <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0">info</span>
-              <div>
-                <p className="font-bold mb-1">⚠️ โอกาสแก้สอบแก้ตัว!</p>
-                <p className="font-medium text-amber-700 leading-relaxed">
-                  เนื่องจากคุณพยายามทำพฤติกรรมสลับแท็บ/ออกนอกหน้าจอในครั้งแรก ระบบจึงตัดคำตอบทันที อย่างไรก็ตาม คุณยังคงได้รับโอกาสเข้าสอบแก้ตัวใหม่อีก <strong>1 ครั้งถ้วน</strong> โดยสามารถล็อกอินเข้าระบบด้วยรหัสนักเรียนเดิมและกดปุ่มเริ่มสอบใหม่อีกครั้ง
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-xs text-[#59413f]">
-              <span className="material-symbols-outlined text-[16px] text-[#8e171c]">info</span>
-              <span>คุณสามารถตรวจสอบคะแนนสอบได้ในช่วงเย็นตามเวลาที่กำหนด</span>
-            </div>
-          )}
+         {submission.status === "ทุจริต" ? (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-3xl p-5 max-w-lg text-xs font-semibold flex items-start gap-3">
+          <span className="material-symbols-outlined text-[20px] text-red-600 shrink-0">block</span>
+          <div>
+            <p className="font-bold mb-1 flex items-center gap-1 text-red-700">🛑 หมดสิทธิ์เข้าสอบวิชานี้ถาวร!</p>
+            <p className="font-medium text-red-700 leading-relaxed">
+              เนื่องจากคุณทำผิดกฎความปลอดภัย (สลับแท็บ/ออกนอกหน้าจอ/ทุจริต) ครบตามที่ระบบกำหนด 
+              ระบบจึงทำการระงับสิทธิ์การสอบในวิชานี้ของคุณอย่างถาวร และจะไม่สามารถกลับเข้าทำข้อสอบใหม่ได้อีก 
+              ข้อมูลพฤติกรรมทั้งหมดถูกบันทึกส่งตรงไปยังเหล่าซรือเรียบร้อยแล้ว
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 text-xs text-[#59413f]">
+          <span className="material-symbols-outlined text-[16px] text-[#8e171c]">info</span>
+          <span>คุณสามารถตรวจสอบคะแนนสอบได้ในช่วงเย็นตามเวลาที่กำหนด</span>
+        </div>
+      )}
         </div>
       </div>
     </div>
