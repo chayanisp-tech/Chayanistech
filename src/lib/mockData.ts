@@ -88,7 +88,7 @@ export const DEFAULT_EXAMS: Exam[] = [
 ];
 
 export const DEFAULT_SETTINGS: SystemSettings = {
-  teacherName: "ครูชญานิศ พรหมจันทร์",
+  teacherName: "ครูชญานิศ พลวาปี",
   teacherEmail: "chayanisp@banmuang.ac.th",
   role: "อาจารย์ผู้สอนวิชาภาษาจีน",
   lockdown: true,
