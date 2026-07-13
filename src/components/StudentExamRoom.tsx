@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
+
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -9,6 +10,7 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   }
   return shuffled;
 };
+
 interface StudentExamRoomProps {
   student: Student;
   activeExams: Exam[];
@@ -30,6 +32,10 @@ export default function StudentExamRoom({
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [isExamStarted, setIsExamStarted] = useState(false);
 
+  // 1. เพิ่ม State และ Ref สำหรับสะสมแต้มเตือนการทุจริตภายในห้องสอบ (คละข้อหากันได้)
+  const [cheatCount, setCheatCount] = useState(0);
+  const cheatCountRef = useRef(0);
+
   // Sync answers and exam to refs for cheat detection event listeners
   const answersRef = useRef(answers);
   const selectedExamRef = useRef(selectedExam);
@@ -42,79 +48,115 @@ export default function StudentExamRoom({
     selectedExamRef.current = selectedExam;
   }, [selectedExam]);
 
-  // Anti-Cheat (tab change / blur) Detection
+  // Sync cheatCount ไปยัง Ref เพื่อป้องกันปัญหา Stale Closure ใน Event Listener
+  useEffect(() => {
+    cheatCountRef.current = cheatCount;
+  }, [cheatCount]);
+
+  // 2. ระบบ Anti-Cheat อัจฉริยะ (ดักจับ 4 พฤติกรรม: สลับจอ / หลุดโฟกัส / ก๊อปปี้ / ปริ้นสกรีน)
   useEffect(() => {
     if (!isExamStarted) return;
 
-    let alreadyTriggered = false;
+    const handleCheatDetected = (actionType: string) => {
+      const newCount = cheatCountRef.current + 1;
+      setCheatCount(newCount);
 
-    const handleCheatDetected = () => {
-      if (alreadyTriggered) return;
-      alreadyTriggered = true;
+      // กรณีทำผิดกฎรวมกันครบ 3 ครั้ง -> บังคับส่งคำตอบทันทีและปรับสถานะเป็น "ทุจริต"
+      if (newCount >= 3) {
+        const exam = selectedExamRef.current;
+        if (!exam) return;
 
-      // Force submit with status "ทุจริต"
-      const exam = selectedExamRef.current;
-      if (!exam) return;
+        alert(
+          `🛑 [ระบบทำการล็อกอัตโนมัติเนื่องจากทุจริต]\n\nนักเรียนทำผิดกฎความปลอดภัยเรื่อง: "${actionType}" ครบกำหนด 3 ครั้ง\nระบบได้ทำการบันทึกสถานะ "ทุจริตการสอบ" และทำการรวบรวมส่งคำตอบของคุณเข้าสู่คลาวด์โดยอัตโนมัติทันที!`
+        );
 
-      alert("⚠️ ตรวจพบการย้ายหน้าจอสอบ บล็อกความพยายามสลับแท็บ หรือเปิดหน้าต่างอื่น!\n\nระบบจำเป็นต้อง บังคับส่งข้อสอบโดยอัตโนมัติ ทันที และรายงานความพฤติกรรมทุจริตนี้ได้รับการส่งให้ผู้ดูแลระบบแล้ว");
+        const currentAnswers = answersRef.current;
+        let totalPoints = 0;
+        let autoScore = 0;
+        let actualAnsweredCount = 0;
 
-      const currentAnswers = answersRef.current;
-      let totalPoints = 0;
-      let autoScore = 0;
-      let actualAnsweredCount = 0;
-
-      exam.questions.forEach((q) => {
-        totalPoints += q.points;
-        const ans = currentAnswers[q.id];
-        if (q.type === "subjective") {
-          if (ans && (ans.text?.trim() || ans.drawing)) {
-            actualAnsweredCount++;
-          }
-        } else {
-          if (ans !== undefined) {
-            actualAnsweredCount++;
-            if (ans === q.answerIndex) {
-              autoScore += q.points;
+        exam.questions.forEach((q) => {
+          totalPoints += q.points;
+          const ans = currentAnswers[q.id];
+          if (q.type === "subjective") {
+            if (ans && (ans.text?.trim() || ans.drawing)) {
+              actualAnsweredCount++;
+            }
+          } else {
+            if (ans !== undefined) {
+              actualAnsweredCount++;
+              if (ans === q.answerIndex) {
+                autoScore += q.points;
+              }
             }
           }
-        }
-      });
+        });
 
-      const newSubmission: Submission = {
-        submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
-        studentId: student.id,
-        studentName: student.name,
-        studentClassName: student.className,
-        examId: exam.id,
-        examTitle: exam.title,
-        score: autoScore,
-        totalPoints: totalPoints,
-        answeredCount: actualAnsweredCount,
-        totalQuestions: exam.questions.length,
-        submittedAt: new Date().toISOString(),
-        status: "ทุจริต",
-        answers: currentAnswers,
-      };
+        const newSubmission: Submission = {
+          submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
+          studentId: student.id,
+          studentName: student.name,
+          studentClassName: student.className,
+          examId: exam.id,
+          examTitle: exam.title,
+          score: autoScore,
+          totalPoints: totalPoints,
+          answeredCount: actualAnsweredCount,
+          totalQuestions: exam.questions.length,
+          submittedAt: new Date().toISOString(),
+          status: "ทุจริต",
+          answers: currentAnswers,
+        };
 
-      onExamSubmitted(newSubmission);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        handleCheatDetected();
+        setIsExamStarted(false);
+        setSelectedExam(null);
+        setCheatCount(0); // ล้างแต้มเตือน
+        onExamSubmitted(newSubmission);
+      } else {
+        // กรณีทำผิดกฎแต่ยังไม่ครบ 3 ครั้ง -> เด้งเตือนสะสมแต้ม (ครั้งที่ 1 หรือ 2)
+        alert(
+          `⚠️ คำเตือนความปลอดภัยระบบสอบ (ครั้งที่ ${newCount}/3)\nตรวจพบพฤติกรรมต้องสงสัย: "${actionType}"\n\nคำแนะนำ: กรุณาทำข้อสอบด้วยความซื่อสัตย์ หากระทำการฝ่าฝืนระบบความปลอดภัยรวมกันครบ 3 ครั้ง ระบบจะปรับตกและส่งคำตอบทันที!`
+        );
       }
     };
 
-    const handleWindowBlur = () => {
-      handleCheatDetected();
+    // ก) ดักจับการสลับแท็บเบราว์เซอร์หรือย่อหน้าต่างลง
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        handleCheatDetected("สลับหน้าจอ หรือ เปลี่ยนแท็บเบราว์เซอร์");
+      }
     };
 
+    // ข) ดักจับการคลิกออกจากหน้าต่างเว็บสอบ (เช่น แอบเปิดแอปไลน์ หรือเปิดโปรแกรมสกรีนช็อตซ้อนขึ้นมา)
+    const handleWindowBlur = () => {
+      handleCheatDetected("คลิกออกจากหน้าต่างข้อสอบ / พยายามบันทึกภาพหน้าจอแบบอ้อม");
+    };
+
+    // ค) บล็อกการก๊อปปี้ข้อความข้อสอบ (Copy) + นับแต้มเตือน
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault(); // บล็อกไม่ให้ก๊อปปี้ข้อความได้จริง ๆ
+      handleCheatDetected("พยายามคัดลอกข้อความข้อสอบ (Copy)");
+    };
+
+    // ง) ดักจับการกดปุ่มบันทึกหน้าจอ (Print Screen) บนแป้นพิมพ์
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "PrintScreen") {
+        handleCheatDetected("กดปุ่มบันทึกภาพหน้าจอ (Print Screen)");
+      }
+    };
+
+    // ลงทะเบียน Event ทั้งหมด
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("copy", handleCopy);
+    window.addEventListener("keydown", handleKeyDown);
 
+    // ทำความสะอาดระบบเมื่อปิดหน้าห้องสอบ
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("copy", handleCopy);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isExamStarted, student, onExamSubmitted]);
 
@@ -192,6 +234,7 @@ export default function StudentExamRoom({
 
     setSelectedExam(randomizedExam); // ใช้อันที่สลับแล้ว
     setAnswers({});
+    setCheatCount(0); // เคลียร์บิลแต้มเตือนใหม่แกะกล่องสำหรับการสอบรอบนี้
     setCurrentQuestionIndex(0);
     setSecondsRemaining(exam.timeLimitMinutes * 60);
     setIsExamStarted(true);
@@ -268,6 +311,7 @@ export default function StudentExamRoom({
 
     setIsExamStarted(false);
     setSelectedExam(null);
+    setCheatCount(0); // ล้างแต้มเตือน
     onExamSubmitted(newSubmission);
   };
 
@@ -316,9 +360,11 @@ export default function StudentExamRoom({
                   (s) => s.studentId === student.id && s.examId === exam.id
                 );
                 const hasCompleted = examSubmissions.some((s) => s.status === "สมบูรณ์");
+                
+                // 3. ปรับระบบนับจำนวนครั้งที่แอบทุจริตในระดับวิชา (ขยับลิมิตเป็นโดนล็อกครบ 3 บิลส่ง ถึงจะหมดสิทธิ์สอบถาวร)
                 const cheatAttempts = examSubmissions.filter((s) => s.status === "ทุจริต").length;
-                const hasRemainingAttempt = cheatAttempts === 1 && !hasCompleted;
-                const isBlocked = hasCompleted || cheatAttempts >= 2;
+                const hasRemainingAttempt = cheatAttempts > 0 && cheatAttempts < 3 && !hasCompleted;
+                const isBlocked = hasCompleted || cheatAttempts >= 3;
 
                 return (
                   <div
@@ -338,7 +384,7 @@ export default function StudentExamRoom({
                       <h3 className="text-xl font-bold text-[#251817] mb-2">{exam.title}</h3>
                       <p className="text-sm text-[#59413f] mb-4 line-clamp-3">{exam.description}</p>
 
-                      {/* Display Status Badges */}
+                      {/* แสดงข้อความเตือนบนหน้า Dashboard โฉมใหม่ */}
                       <div className="mb-4">
                         {hasCompleted && (
                           <div className="px-4 py-2 bg-[#eaf5ea] border border-[#b2dbb2] text-[#2b6a2b] text-xs font-bold rounded-2xl flex items-center gap-1.5">
@@ -346,19 +392,19 @@ export default function StudentExamRoom({
                             <span>คุณได้ส่งคำตอบแล้ว</span>
                           </div>
                         )}
-                        {cheatAttempts === 1 && !hasCompleted && (
+                        {cheatAttempts > 0 && cheatAttempts < 3 && !hasCompleted && (
                           <div className="px-4 py-2 bg-[#fff1e0] border border-[#ffd29e] text-[#b35c00] text-xs font-bold rounded-2xl flex flex-col gap-1">
                             <div className="flex items-center gap-1.5">
                               <span className="material-symbols-outlined text-[16px]">warning</span>
-                              <span>ตรวจพบการพยายามทุจริตในครั้งแรก</span>
+                              <span>ตรวจพบสถานะทุจริตจากการสอบก่อนหน้า (ครั้งที่ {cheatAttempts}/3)</span>
                             </div>
-                            <p className="text-[10px] font-medium ml-5 text-[#8c4800]">คุณได้รับสิทธิ์เข้าสอบแก้ตัวได้ใหม่อีก 1 ครั้ง (โอกาสสุดท้าย)</p>
+                            <p className="text-[10px] font-medium ml-5 text-[#8c4800]">คุณได้รับสิทธิ์เข้าสอบแก้ตัวได้อีก {3 - cheatAttempts} ครั้ง</p>
                           </div>
                         )}
-                        {cheatAttempts >= 2 && (
+                        {cheatAttempts >= 3 && (
                           <div className="px-4 py-2 bg-[#ffebeb] border border-[#ffc2c2] text-[#c92a2a] text-xs font-bold rounded-2xl flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-[16px]">error</span>
-                            <span>หมดสิทธิ์สอบ (ตรวจพบการพยายามทุจริตเกินกำหนด)</span>
+                            <span>หมดสิทธิ์สอบถาวร (ตรวจพบการพยายามทุจริตครบ 3 ครั้ง)</span>
                           </div>
                         )}
                       </div>
@@ -381,7 +427,7 @@ export default function StudentExamRoom({
                           onClick={() => handleStartExam(exam)}
                           className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-full font-bold text-sm transition-all shadow-md shadow-amber-600/10 cursor-pointer"
                         >
-                          เริ่มสอบแก้ตัว (โอกาสสุดท้าย)
+                          เริ่มสอบแก้ตัว (รอบที่ {cheatAttempts + 1})
                         </button>
                       ) : (
                         <button
@@ -472,8 +518,10 @@ export default function StudentExamRoom({
                     className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
                       isCurrent
                         ? "bg-[#8e171c] text-white ring-4 ring-[#8e171c]/15 shadow-sm"
-                        : isAnswered
-                        ? "bg-[#ffd0cc] text-[#8e171c]"
+                        : "bg-[#ffd0cc] text-[#8e171c]"
+                        ? isAnswered
+                          ? "bg-[#ffd0cc] text-[#8e171c]"
+                          : "bg-[#fff8f7] text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
                         : "bg-[#fff8f7] text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
                     }`}
                   >
@@ -542,7 +590,6 @@ export default function StudentExamRoom({
               {/* Option Choices or Subjective Text/Drawing input */}
               {currentQuestion.type === "subjective" ? (
                 <div className="space-y-6">
-{/* 🟢 แสดงกล่องพิมพ์ข้อความ: เมื่อครูไม่ได้ตั้งค่า หรือตั้งเป็น "text" */}
                   {(!currentQuestion.subjectiveMode || currentQuestion.subjectiveMode === "text") && (
                     <div className="space-y-2 animate-fade-in">
                       <label className="block text-xs font-bold text-[#59413f]">
@@ -557,7 +604,6 @@ export default function StudentExamRoom({
                     </div>
                   )}
 
-                  {/* 🔴 แสดงกระดานวาดรูป: เมื่อครูตั้งค่าเป็น "canvas" เท่านั้น */}
                   {currentQuestion.subjectiveMode === "canvas" && (
                     <div className="space-y-2 animate-fade-in">
                       <label className="block text-xs font-bold text-[#59413f]">
