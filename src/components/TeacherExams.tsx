@@ -42,7 +42,7 @@ export default function TeacherExams({
   const [qError, setQError] = useState("");
 
   // =========================================================
-  // ⚡ ลิงก์ Google Apps Script ของครูชญานิศ (อัปเดตแล้วเรียบร้อย)
+  // ⚡ อัปโหลดรูปภาพเข้า Google Drive ผ่าน Apps Script
   // =========================================================
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,7 +60,6 @@ export default function TeacherExams({
       try {
         const base64Raw = (event.target?.result as string).split(",")[1];
         
-        // 🔗 ฝังลิงก์เว็บแอปสคริปต์ของครูตรงนี้เรียบร้อยครับ
         const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxYyXQWpyOCeOfJBQELRkwLwTLAVrm_t_FpBH681u-TNwaSKJNz6432adGneCxuAvMRfA/exec";
 
         const driveResponse = await fetch(GOOGLE_APPS_SCRIPT_URL, {
@@ -76,7 +75,7 @@ export default function TeacherExams({
         const result = await driveResponse.json();
         
         if (result.status === "success") {
-          setQImageUrl(result.fileUrl); // ได้รับ Direct Link สั้นๆ กลับมาเก็บในระบบ
+          setQImageUrl(result.fileUrl); 
           setQError(""); 
           alert("🎉 อัปโหลดรูปภาพเข้า Google Drive สำเร็จเรียบร้อย!");
         } else {
@@ -90,6 +89,9 @@ export default function TeacherExams({
     reader.readAsDataURL(file);
   };
 
+  // =========================================================
+  // 📊 นำเข้าไฟล์ข้อสอบจากสเปรดชีต Excel / Google Sheets
+  // =========================================================
   const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -108,30 +110,23 @@ export default function TeacherExams({
           return;
         }
 
-// --- เริ่มต้นโค้ดปรับปรุงใหม่เพื่อความยืดหยุ่น ---
-    
-    // 1. ค้นหาว่าหัวตารางจริงๆ อยู่แถวไหน (สแกนหาแถวที่มีคำว่า คำถาม หรือ ตัวเลือก หรือ เฉลย)
-    let headerRowIndex = 0;
-    for (let i = 0; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      if (row && row.some(cell => {
-        const str = String(cell).toLowerCase();
-        return str.includes("คำถาม") || str.includes("question") || str.includes("โจทย์");
-      })) {
-        headerRowIndex = i;
-        break;
-      }
-    }
+        let headerRowIndex = 0;
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (row && row.some(cell => {
+            const str = String(cell).toLowerCase();
+            return str.includes("คำถาม") || str.includes("question") || str.includes("โจทย์");
+          })) {
+            headerRowIndex = i;
+            break;
+          }
+        }
 
-    // 2. ดึงหัวข้อคอลัมน์จากแถวที่เจอจริงๆ
-    const headers = jsonData[headerRowIndex].map((h) => String(h || "").trim().toLowerCase());
-    console.log("หัวตารางที่ระบบตรวจเจอจริง ๆ อยู่ในแถวที่:", headerRowIndex + 1, headers);
+        const headers = jsonData[headerRowIndex].map((h) => String(h || "").trim().toLowerCase());
 
-    const findColIndex = (keywords: string[]) => {
-      return headers.findIndex((h) => keywords.some((k) => h.includes(k)));
-    };
-    
-    // --- สิ้นสุดโค้ดที่ปรับปรุง ---
+        const findColIndex = (keywords: string[]) => {
+          return headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+        };
 
         const typeIdx = findColIndex(["ประเภท", "type", "ชนิด"]);
         const textIdx = findColIndex(["คำถาม", "โจทย์", "question", "text", "โจทย์คำถาม"]);
@@ -213,7 +208,7 @@ export default function TeacherExams({
             type: qTypeVal,
             points: qPointsVal,
             imageUrl: qImgVal || undefined,
-            options,
+            options: qTypeVal === "choice" ? options : [],
             answerIndex: qTypeVal === "choice" ? ansIdx : -1,
             ...(qTypeVal === "subjective" ? { subjectiveMode: subjectiveModeVal } : {}),
           });
@@ -234,6 +229,9 @@ export default function TeacherExams({
     reader.readAsArrayBuffer(file);
   };
 
+  // =========================================================
+  // 📝 เพิ่มข้อสอบลงรายการคำถามทีละข้อ
+  // =========================================================
   const handleAddQuestion = () => {
     setQError("");
     if (!qText.trim()) {
@@ -263,6 +261,7 @@ export default function TeacherExams({
 
     setQuestions([...questions, newQ]);
     
+    // Reset Form
     setQText("");
     setQImageUrl("");
     setQOptA("");
@@ -274,6 +273,9 @@ export default function TeacherExams({
     setQPoints(10);
   };
 
+  // =========================================================
+  // 💾 บันทึกชุดข้อสอบลงในระบบหลัก
+  // =========================================================
   const handleSaveExam = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !courseCode.trim() || questions.length === 0) {
@@ -305,13 +307,7 @@ export default function TeacherExams({
       onAddExam(newExam);
     }
     
-    setTitle("");
-    setCourseCode("");
-    setDescription("");
-    setTimeLimit(40);
-    setQuestions([]);
-    setIsCreating(false);
-    setEditingExamId(null);
+    handleCancel();
   };
 
   const handleCancel = () => {
@@ -341,12 +337,11 @@ export default function TeacherExams({
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* ส่วนหัวข้อเว็บบอร์ดของคุณครู */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ข้อสอบวิชาภาษาจีน</h1>
-          <p className="text-sm text-[#59413f] mt-1">
-            สร้าง จัดการ และตรวจสอบข้อสอบทั้งหมดที่นักเรียนสามารถเริ่มลงทะเบียนสอบได้
-          </p>
+          <p className="text-sm text-[#59413f] mt-1">สร้าง จัดการ และตรวจสอบข้อสอบทั้งหมดที่นักเรียนสามารถเข้าสอบได้</p>
         </div>
         {!isCreating && (
           <button
@@ -365,19 +360,14 @@ export default function TeacherExams({
             <h3 className="text-xl font-bold text-[#251817]">
               {editingExamId ? "แก้ไขข้อสอบ" : "สร้างข้อสอบใหม่"}
             </h3>
-            <p className="text-xs text-[#59413f] mt-1">
-              {editingExamId 
-                ? "ปรับปรุงข้อมูลหัวเรื่องของแบบทดสอบ เพิ่ม/ลบ คำถามตามต้องการ และกดบันทึกความเปลี่ยนแปลง" 
-                : "กรอกข้อมูลหัวเรื่องของแบบทดสอบ และเพิ่มข้อสอบแบบหลายตัวเลือกทีละข้อ"}
-            </p>
+            <p className="text-xs text-[#59413f] mt-1">กรอกข้อมูลหัวเรื่องของแบบทดสอบ และจัดการรายละเอียดคำถามข้อสอบ</p>
           </div>
 
           <form onSubmit={handleSaveExam} className="space-y-6">
+            {/* ข้อมูลทั่วไปของแบบทดสอบ */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1">
-                <label htmlFor="examTitleInput" className="block text-xs font-bold text-[#59413f]">
-                  หัวข้อข้อสอบ
-                </label>
+                <label htmlFor="examTitleInput" className="block text-xs font-bold text-[#59413f]">หัวข้อข้อสอบ</label>
                 <input
                   id="examTitleInput"
                   type="text"
@@ -390,9 +380,7 @@ export default function TeacherExams({
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="examCourseInput" className="block text-xs font-bold text-[#59413f]">
-                  รหัสวิชา
-                </label>
+                <label htmlFor="examCourseInput" className="block text-xs font-bold text-[#59413f]">รหัสวิชา</label>
                 <input
                   id="examCourseInput"
                   type="text"
@@ -405,14 +393,11 @@ export default function TeacherExams({
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="examTimeLimitInput" className="block text-xs font-bold text-[#59413f]">
-                  ระยะเวลาทำข้อสอบ (นาที)
-                </label>
+                <label htmlFor="examTimeLimitInput" className="block text-xs font-bold text-[#59413f]">ระยะเวลาทำข้อสอบ (นาที)</label>
                 <input
                   id="examTimeLimitInput"
                   type="number"
                   min={5}
-                  max={240}
                   value={timeLimit}
                   onChange={(e) => setTimeLimit(Number(e.target.value))}
                   className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817]"
@@ -422,250 +407,128 @@ export default function TeacherExams({
             </div>
 
             <div className="space-y-1">
-              <label htmlFor="examDescriptionInput" className="block text-xs font-bold text-[#59413f]">
-                คำอธิบายข้อสอบ
-              </label>
+              <label htmlFor="examDescriptionInput" className="block text-xs font-bold text-[#59413f]">คำอธิบายข้อสอบ</label>
               <textarea
                 id="examDescriptionInput"
-                placeholder="เช่น วัดความรู้เบื้องต้นเกี่ยวกับพินอิน การอ่านพยัญชนะ สระ และตัวเลข"
+                placeholder="รายละเอียดเพิ่มเติมหรือคำชี้แจงเพิ่มเติม..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full px-4 py-2 rounded-2xl border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] h-20 resize-none"
               />
             </div>
 
+            {/* ส่วนสรุปรายการข้อที่มีอยู่แล้ว */}
             <div className="border-t border-[#e0bfbc]/30 pt-6">
-              <h4 className="text-sm font-bold text-[#251817] mb-4">
-                รายการข้อสอบในชุด ({questions.length} ข้อ)
-              </h4>
-              
+              <h4 className="text-sm font-bold text-[#251817] mb-4">รายการข้อสอบในชุด ({questions.length} ข้อ)</h4>
               {questions.length === 0 ? (
                 <p className="text-xs text-center py-6 text-[#59413f] bg-[#fff8f7] rounded-2xl border border-dashed border-[#e0bfbc]/60">
-                  ยังไม่ได้เพิ่มคำถามลงในชุดข้อสอบนี้ กรุณาสร้างคำถามด้านล่างนี้
+                  ยังไม่ได้เพิ่มคำถามลงในชุดข้อสอบนี้ กรุณาสร้างคำถามด้านล่างนี้หรือใช้ระบบการนำเข้าไฟล์
                 </p>
               ) : (
                 <div className="space-y-4">
                   {questions.map((q, idx) => (
-                    <div
-                      key={q.id}
-                      className="p-4 bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-start text-xs"
-                    >
-                      <div className="space-y-1.5">
-                        <p className="font-bold text-[#251817] text-sm">
-                          ข้อ {idx + 1}: {q.text} ({q.points} คะแนน)
-                        </p>
-                        {q.imageUrl && (
-                          <div className="my-2 max-w-[150px] border border-[#e0bfbc] rounded-lg overflow-hidden bg-white">
-                            <img src={q.imageUrl} alt="คำถามภาพประกอบ" className="w-full object-cover max-h-[100px]" referrerPolicy="no-referrer" />
-                          </div>
-                        )}
-                        {q.type === "subjective" ? (
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#ffe9e7] text-[#8e171c] font-bold rounded-full text-[10px]">
-                            <span className="material-symbols-outlined text-[12px]">edit_note</span>
-                            ข้อสอบอัตนัย ({(q as any).subjectiveMode === "canvas" ? "โหมดคัดเขียนลายมือจีน" : "โหมดพิมพ์ตอบบรรยาย"})
-                          </div>
+                    <div key={q.id} className="p-4 bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-start text-xs">
+                      <div>
+                        <p className="font-bold text-[#251817] text-sm">ข้อ {idx + 1}: {q.text} ({q.points} คะแนน)</p>
+                        {q.imageUrl && <img src={q.imageUrl} alt="โจทย์ภาพ" className="my-2 max-h-24 object-contain border rounded-lg" referrerPolicy="no-referrer" />}
+                        {q.type === "choice" ? (
+                          <ul className="mt-2 space-y-0.5 text-gray-600 font-medium">
+                            {q.options.map((opt, oIdx) => (
+                              <li key={oIdx} className={oIdx === q.answerIndex ? "text-[#8e171c] font-bold" : ""}>
+                                {["A", "B", "C", "D", "E"][oIdx]}. {opt}
+                              </li>
+                            ))}
+                          </ul>
                         ) : (
-                          <div>
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#eaf5ea] text-[#2b6a2b] font-bold rounded-full text-[10px] mb-1.5">
-                              <span className="material-symbols-outlined text-[12px]">list_alt</span>
-                              ข้อสอบปรนัย (5 ตัวเลือก)
-                            </div>
-                            <ul className="grid grid-cols-2 gap-2 font-medium text-[#59413f]">
-                              {q.options.map((opt, oIdx) => (
-                                <li
-                                  key={oIdx}
-                                  className={oIdx === q.answerIndex ? "text-[#8e171c] font-bold flex items-center gap-1" : ""}
-                                >
-                                  {oIdx === q.answerIndex && <span className="material-symbols-outlined text-[14px]">check</span>}
-                                  {["A", "B", "C", "D", "E"][oIdx]}. {opt}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                          <span className="inline-block mt-2 px-2 py-0.5 bg-orange-100 text-orange-700 font-bold rounded">อัตนัย</span>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveQuestion(idx)}
-                        className="text-red-500 hover:text-red-700 font-bold"
-                      >
-                        ลบออก
-                      </button>
+                      <button type="button" onClick={() => handleRemoveQuestion(idx)} className="text-red-500 hover:text-red-700 font-bold">ลบ</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* --- เริ่มต้นกล่องปุ่มดาวน์โหลดเทมเพลตที่เพิ่มใหม่ --- */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 bg-gray-50 p-4 rounded-2xl border border-gray-200 w-full">
-            <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[18px]">cloud_download</span>
-              ดาวน์โหลดแบบฟอร์มมาตรฐานสำหรับครู (เทมเพลต)
+            {/* ส่วนโหลดเทมเพลตและอัปโหลด Excel */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 bg-gray-50 p-4 rounded-2xl border border-gray-200 w-full">
+              <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px]">cloud_download</span>
+                ดาวน์โหลดแบบฟอร์มมาตรฐานสำหรับครู (เทมเพลต)
+              </div>
+              <a 
+                href="https://docs.google.com/spreadsheets/d/1bJxpy9E4G1yx91A7cXr8RTdQ09l1M1HwF0BCwgLMt5A/copy" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[16px]">description</span>
+                กดเพื่อทำสำเนา Google Sheet
+              </a>
             </div>
-            <a 
-              href="https://docs.google.com/spreadsheets/d/1bJxpy9E4G1yx91A7cXr8RTdQ09l1M1HwF0BCwgLMt5A/copy" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
-            >
-              <span className="material-symbols-outlined text-[16px]">description</span>
-              กดเพื่อทำสำเนา Google Sheet
-            </a>
-          </div>
-          {/* --- สิ้นสุดกล่องปุ่มที่เพิ่มใหม่ --- */}
-            
+
             <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-3 shadow-sm">
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[18px]">table_view</span>
                 นำเข้าชุดคำถามจากไฟล์ชีท หรือ Excel (.xlsx) / CSV
               </h5>
-              <p className="text-xs text-[#59413f] leading-relaxed">
-                คุณครูสามารถอัปโหลดไฟล์ที่มีรายชื่อข้อสอบเพื่อนำเข้าคำถามพร้อมกันแบบรวดเร็ว ระบบจะตรวจหาคอลัมน์อัตโนมัติ 
-                คอลัมน์ที่รองรับ: <span className="font-bold text-[#8e171c]">คำถาม / โจทย์, ประเภท (ปรนัย หรือ อัตนัย), คะแนน, ตัวเลือก A, ตัวเลือก B, ตัวเลือก C, ตัวเลือก D, ตัวเลือก E, เฉลย (A/B/C/D/E หรือ 1-5), ลิงก์รูปภาพ</span>
-              </p>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
-                <input
-                  id="excelImportInput"
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleXlsxImport}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="excelImportInput"
-                  className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-[#8e171c]/15"
-                >
-                  <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                  <span>เลือกไฟล์ Excel / Sheets (.xlsx / .csv)</span>
-                </label>
-              </div>
+              <input id="excelImportInput" type="file" accept=".xlsx, .xls, .csv" onChange={handleXlsxImport} className="hidden" />
+              <label htmlFor="excelImportInput" className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all inline-flex items-center gap-2 cursor-pointer shadow-md">
+                <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                <span>เลือกไฟล์ Excel / Sheets (.xlsx)</span>
+              </label>
             </div>
 
-            <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-4">
+            {/* ฟอร์มสร้างข้อสอบทีละข้อ */}
+            <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-4🔢">
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1">
-                <span className="material-symbols-outlined">add_circle</span>
-                สร้างคำถามทีละข้อ
+                <span className="material-symbols-outlined">add_circle</span>สร้างคำถามใหม่แบบกำหนดเอง
               </h5>
 
               <div className="space-y-1">
-                <label className="block text-xs font-bold text-[#59413f]">
-                  ประเภทข้อสอบ (Question Type)
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-[#251817] cursor-pointer">
-                    <input
-                      type="radio"
-                      name="questionType"
-                      checked={qType === "choice"}
-                      onChange={() => setQType("choice")}
-                      className="accent-[#8e171c]"
-                    />
-                    <span>ปรนัย (หลายตัวเลือก - 5 ตัวเลือก)</span>
+                <label className="block text-xs font-bold text-[#59413f]">ประเภทข้อสอบ</label>
+                <div className="flex gap-4 text-xs font-semibold">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="qType" checked={qType === "choice"} onChange={() => setQType("choice")} className="accent-[#8e171c]" />
+                    <span>ปรนัย (5 ตัวเลือก)</span>
                   </label>
-                  <label className="flex items-center gap-2 text-xs font-semibold text-[#251817] cursor-pointer">
-                    <input
-                      type="radio"
-                      name="questionType"
-                      checked={qType === "subjective"}
-                      onChange={() => setQType("subjective")}
-                      className="accent-[#8e171c]"
-                    />
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="qType" checked={qType === "subjective"} onChange={() => setQType("subjective")} className="accent-[#8e171c]" />
                     <span>อัตนัย</span>
                   </label>
                 </div>
               </div>
 
               {qType === "subjective" && (
-                <div className="p-3.5 bg-white border border-[#e0bfbc]/60 rounded-2xl space-y-1.5 animate-fade-in">
-                  <label className="block text-xs font-bold text-[#8e171c]">รูปแบบการตอบที่ต้องการในข้อนี้:</label>
-                  <div className="flex gap-5 text-xs font-semibold text-[#59413f]">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="subjectiveSubMode"
-                        checked={subMode === "text"}
-                        onChange={() => setSubMode("text")}
-                        className="accent-[#8e171c]"
-                      />
-                      ให้นักเรียน "พิมพ์ตอบเป็นข้อความบรรยาย"
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="subjectiveSubMode"
-                        checked={subMode === "canvas"}
-                        onChange={() => setSubMode("canvas")}
-                        className="accent-[#8e171c]"
-                      />
-                      ให้นักเรียน "คัดเขียนตัวอักษรจีน" บนกระดานวาดเขียน (Canvas)
-                    </label>
+                <div className="p-3 bg-white border border-[#e0bfbc]/60 rounded-2xl space-y-1 text-xs">
+                  <label className="block font-bold text-[#8e171c]">รูปแบบข้อสอบอัตนัย:</label>
+                  <div className="flex gap-4 font-semibold text-gray-700">
+                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="subMode" checked={subMode === "text"} onChange={() => setSubMode("text")} className="accent-[#8e171c]" /> พิมพ์ข้อความบรรยาย</label>
+                    <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="subMode" checked={subMode === "canvas"} onChange={() => setSubMode("canvas")} className="accent-[#8e171c]" /> วาด/คัดลายมือจีนบนบอร์ด</label>
                   </div>
                 </div>
               )}
 
               <div className="space-y-1">
-                <label htmlFor="qTextInput" className="block text-xs font-bold text-[#59413f]">
-                  คำถาม / โจทย์ข้อสอบ
-                </label>
-                <input
-                  id="qTextInput"
-                  type="text"
-                  placeholder={qType === "choice" ? "เช่น คำศัพท์ '老师' (lǎoshī) มีความหมายตรงกับข้อใด?" : subMode === "canvas" ? "เช่น จงคัดตัวอักษรจีนคำว่า '你好' ลงบนกระดานให้ถูกต้อง" : "เช่น ประโยคนี้แปลความหมายเป็นไทยว่าอย่างไร"}
-                  value={qText}
-                  onChange={(e) => setQText(e.target.value)}
-                  className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                />
+                <label htmlFor="qTextInput" className="block text-xs font-bold text-[#59413f]">คำถาม / โจทย์ข้อสอบ</label>
+                <input id="qTextInput" type="text" placeholder="พิมพ์โจทย์ที่ต้องการ..." value={qText} onChange={(e) => setQText(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] text-sm font-semibold text-[#251817] bg-white outline-none focus:border-[#8e171c]" />
               </div>
 
-              {/* 📸 พาร์ทอัปโหลดรูปแบบใหม่ เชื่อมโยง Google Drive อัตโนมัติ */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white/50 border border-[#e0bfbc]/40 rounded-2xl">
+              {/* ส่วนประกอบอัปโหลดรูปภาพ */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white/50 border border-[#e0bfbc]/40 rounded-2xl text-xs">
                 <div className="space-y-1">
-                  <label htmlFor="qImageFileInput" className="block text-xs font-bold text-[#59413f] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
-                    อัปโหลดเข้า Google Drive อัตโนมัติ (เลือกไฟล์จากเครื่อง)
-                  </label>
-                  <input
-                    id="qImageFileInput"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageFileChange}
-                    className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#ffe9e7] file:text-[#8e171c] hover:file:bg-[#ffdad7] cursor-pointer"
-                  />
+                  <label htmlFor="qImageFileInput" className="font-bold text-[#59413f] block">อัปโหลดไฟล์รูปภาพประกอบ</label>
+                  <input id="qImageFileInput" type="file" accept="image/*" onChange={handleImageFileChange} className="w-full text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:bg-[#ffe9e7] file:text-[#8e171c] file:font-bold hover:file:bg-[#ffdad7] cursor-pointer" />
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor="qImageUrlInput" className="block text-xs font-bold text-[#59413f] flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[16px]">link</span>
-                    ที่อยู่ลิงก์รูปภาพ (ระบบเติมให้อัตโนมัติ)
-                  </label>
-                  <input
-                    id="qImageUrlInput"
-                    type="text"
-                    placeholder="ลิงก์จาก Google Drive จะแสดงตรงนี้"
-                    value={qImageUrl}
-                    onChange={(e) => setQImageUrl(e.target.value)}
-                    className="w-full px-4 py-1.5 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-xs font-semibold text-[#251817] bg-white"
-                  />
+                  <label htmlFor="qImageUrlInput" className="font-bold text-[#59413f] block">URL รูปภาพปลายทาง</label>
+                  <input id="qImageUrlInput" type="text" placeholder="ลิงก์จากระบบฝากรูปภาพ..." value={qImageUrl} onChange={(e) => setQImageUrl(e.target.value)} className="w-full px-4 py-1.5 rounded-full border border-[#e0bfbc] bg-white outline-none focus:border-[#8e171c]" />
                 </div>
-
-                {qImageUrl && (
-                  <div className="md:col-span-2 flex flex-col items-center justify-center p-3 border border-[#e0bfbc]/30 rounded-2xl bg-white relative">
-                    <button
-                      type="button"
-                      onClick={() => setQImageUrl("")}
-                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 text-red-600 flex items-center justify-center text-xs transition-all cursor-pointer"
-                      title="ลบรูปภาพประกอบ"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">close</span>
-                    </button>
-                    <p className="text-[10px] text-[#8c706e] font-semibold mb-1">ตัวอย่างรูปภาพที่อยู่บน Google Drive ของครู:</p>
-                    <img src={qImageUrl} alt="Preview" className="max-h-[180px] rounded-lg object-contain shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
-                  </div>
-                )}
               </div>
 
+              {/* เริ่มต้นส่วนกล่องข้อมูลตัวเลือกตามข้อมูลที่คุณครูส่งมาตัวเต็ม */}
               {qType === "choice" ? (
-                <div className="space-y-4">
+                <div className="space-y-4 animate-fade-in">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label htmlFor="qOptAInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก A</label>
@@ -681,7 +544,7 @@ export default function TeacherExams({
                     <div className="space-y-1">
                       <label htmlFor="qOptBInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก B</label>
                       <input
-                        id="fake_id_b"
+                        id="qOptBInput"
                         type="text"
                         placeholder="เช่น นักเรียน"
                         value={qOptB}
@@ -711,9 +574,7 @@ export default function TeacherExams({
                         className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
+                    <div className="space-y-1 md:col-span-2">
                       <label htmlFor="qOptEInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก E (ตัวเลือกที่ 5)</label>
                       <input
                         id="qOptEInput"
@@ -748,7 +609,7 @@ export default function TeacherExams({
                       id="qCorrectSelect"
                       value={qCorrect}
                       onChange={(e) => setQCorrect(Number(e.target.value))}
-                      className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
+                      className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white cursor-pointer"
                     >
                       <option value={0}>ตัวเลือก A</option>
                       <option value={1}>ตัวเลือก B</option>
