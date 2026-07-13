@@ -6,6 +6,23 @@ import TeacherExams from "./TeacherExams";
 import TeacherGrading from "./TeacherGrading";
 import TeacherSettings from "./TeacherSettings";
 
+// =========================================================================
+// 👥 2. ระบบเพิ่มรายชื่อคุณครูท่านอื่นเพื่อให้เข้ามาจัดการวิชาของตัวเองได้
+// คุณครูสามารถมาเพิ่ม Email, ชื่อ และรูปภาพของครูท่านอื่นตรงลิสต์นี้ได้เลยครับ 
+// =========================================================================
+const ALLOWED_TEACHERS = [
+  {
+    email: "chayanis@school.ac.th", // ใส่ Email ที่คุณครูใช้ล็อกอินหลัก
+    name: "ครูชญานิศ พลวาปี",
+    defaultImg: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop"
+  },
+  {
+    email: "somchai@school.ac.th", // 💡 ตัวอย่าง: บัญชีครูท่านที่ 2 ที่อยากให้เข้ามาเพิ่มวิชาอื่น
+    name: "ครูสมชาย ใจดี",
+    defaultImg: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop"
+  }
+];
+
 interface TeacherDashboardProps {
   teacherEmail: string;
   students: Student[];
@@ -53,17 +70,37 @@ export default function TeacherDashboard({
   onConnectGoogle,
   onLogout,
 }: TeacherDashboardProps) {
-  const [activeTab, setActiveTab] = useState("overview"); // overview, students, exams, grading, settings
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // ค้นหาข้อมูลครูที่กำลังล็อกอินจากลิสต์ด้านบน (ถ้าไม่เจอจะใช้ค่าตามที่ระบบส่งมา)
+  const currentTeacherConfig = ALLOWED_TEACHERS.find(t => t.email.toLowerCase() === teacherEmail.toLowerCase());
+  const displayTeacherName = currentTeacherConfig ? currentTeacherConfig.name : (settings.teacherName || "คุณครูผู้ดูแล");
+  
+  // 📸 ดึงรูปโปรไฟล์: ตรวจสอบว่าในฐานข้อมูลมีการเซฟลิงก์รูปใหม่ไว้ไหม ถ้าไม่มีให้ใช้รูปเริ่มต้นประจำตัว
+  const defaultProfileImg = currentTeacherConfig ? currentTeacherConfig.defaultImg : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop";
+  // สมมติว่าเซฟลิ่งก์ไว้ในฟิลด์อเนกประสงค์ของ settings (เช่น แอบเก็บไว้ในชื่อสเปรดชีตหรือฟิลด์แต่งเติม) หรือดึงจาก localStorage มาร่วมด้วยเพื่อให้เปิดเครื่องไหนรูปก็ยังอยู่
+  const [customImg, setCustomImg] = useState(() => {
+    return localStorage.getItem(`profile_img_${teacherEmail}`) || defaultProfileImg;
+  });
+
+  // ฟังก์ชันสลับเปลี่ยนรูปเมื่อคลิกที่รูปโปรไฟล์
+  const handleImageChange = () => {
+    const newUrl = prompt("คุณครูสามารถนำลิงก์รูปภาพใหม่มาวางที่นี่เพื่อเปลี่ยนรูปได้เลยครับ (ระบบจะจดจำรูปภาพนี้ไว้สำหรับบัญชีคุณครู):", customImg);
+    if (newUrl && newUrl.trim() !== "") {
+      setCustomImg(newUrl.trim());
+      localStorage.setItem(`profile_img_${teacherEmail}`, newUrl.trim());
+      alert("ปรับเปลี่ยนรูปโปรไฟล์เรียบร้อยแล้วครับ!");
+    }
+  };
 
   const handleCreateNewExamQuick = () => {
     setActiveTab("exams");
-    // This switches to the exams tab. The exams view will present the create button/form.
   };
 
   return (
     <div className="min-h-screen flex bg-[#fff8f7] font-sans text-[#251817]">
       
-      {/* 1. LEFT SIDEBAR PANEL (Screen 2 High Fidelity Layout) */}
+      {/* 1. LEFT SIDEBAR PANEL */}
       <aside className="w-80 border-r border-[#e0bfbc]/40 bg-white flex flex-col justify-between shrink-0 h-screen sticky top-0 hidden md:flex">
         <div className="p-6 space-y-8">
           
@@ -89,13 +126,10 @@ export default function TeacherDashboard({
 
           {/* Sidebar Menu Links */}
           <nav className="space-y-1">
-            {/* Overview */}
             <button
               onClick={() => setActiveTab("overview")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-full font-bold text-sm transition-all cursor-pointer ${
-                activeTab === "overview"
-                  ? "bg-[#ffdad7] text-[#8e171c]"
-                  : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
+                activeTab === "overview" ? "bg-[#ffdad7] text-[#8e171c]" : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === "overview" ? "'FILL' 1" : "'FILL' 0" }}>
@@ -104,13 +138,10 @@ export default function TeacherDashboard({
               <span>แผงควบคุม</span>
             </button>
 
-            {/* Students roster */}
             <button
               onClick={() => setActiveTab("students")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-full font-bold text-sm transition-all cursor-pointer ${
-                activeTab === "students"
-                  ? "bg-[#ffdad7] text-[#8e171c]"
-                  : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
+                activeTab === "students" ? "bg-[#ffdad7] text-[#8e171c]" : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === "students" ? "'FILL' 1" : "'FILL' 0" }}>
@@ -119,13 +150,10 @@ export default function TeacherDashboard({
               <span>รายชื่อนักเรียน</span>
             </button>
 
-            {/* Exams list */}
             <button
               onClick={() => setActiveTab("exams")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-full font-bold text-sm transition-all cursor-pointer ${
-                activeTab === "exams"
-                  ? "bg-[#ffdad7] text-[#8e171c]"
-                  : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
+                activeTab === "exams" ? "bg-[#ffdad7] text-[#8e171c]" : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === "exams" ? "'FILL' 1" : "'FILL' 0" }}>
@@ -134,13 +162,10 @@ export default function TeacherDashboard({
               <span>ข้อสอบ</span>
             </button>
 
-            {/* Grading results */}
             <button
               onClick={() => setActiveTab("grading")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-full font-bold text-sm transition-all cursor-pointer ${
-                activeTab === "grading"
-                  ? "bg-[#ffdad7] text-[#8e171c]"
-                  : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
+                activeTab === "grading" ? "bg-[#ffdad7] text-[#8e171c]" : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === "grading" ? "'FILL' 1" : "'FILL' 0" }}>
@@ -149,13 +174,10 @@ export default function TeacherDashboard({
               <span>การให้คะแนน</span>
             </button>
 
-            {/* Settings Screen 2 */}
             <button
               onClick={() => setActiveTab("settings")}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-full font-bold text-sm transition-all cursor-pointer ${
-                activeTab === "settings"
-                  ? "bg-[#ffdad7] text-[#8e171c]"
-                  : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
+                activeTab === "settings" ? "bg-[#ffdad7] text-[#8e171c]" : "text-[#59413f] hover:bg-[#fff8f7] hover:text-[#251817]"
               }`}
             >
               <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeTab === "settings" ? "'FILL' 1" : "'FILL' 0" }}>
@@ -164,26 +186,32 @@ export default function TeacherDashboard({
               <span>ตั้งค่าระบบ</span>
             </button>
           </nav>
-
         </div>
 
-        {/* Bottom Profile details matching Screen 2 */}
+        {/* 🌟 ปรับปรุงส่วนแสดงโปรไฟล์: คลิกที่รูปเพื่อกดเปลี่ยนลิงก์รูปได้เองโดยตรง */}
         <div className="p-6 border-t border-[#e0bfbc]/30 space-y-4 bg-[#fff8f7]/40">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full overflow-hidden border border-[#e0bfbc] shrink-0">
+            <div 
+              onClick={handleImageChange}
+              className="w-11 h-11 rounded-full overflow-hidden border border-[#e0bfbc] shrink-0 cursor-pointer relative group"
+              title="คลิกที่นี่เพื่อเปลี่ยนรูปโปรไฟล์ผู้สอน"
+            >
               <img
-                src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&auto=format&fit=crop"
+                src={customImg}
                 alt="Teacher Profile"
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
               />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <span className="material-symbols-outlined text-white text-[16px]">edit</span>
+              </div>
             </div>
             <div className="min-w-0">
               <span className="block font-black text-xs text-[#251817] truncate">
-                {settings.teacherName}
+                {displayTeacherName}
               </span>
-              <span className="block text-[9px] font-bold text-[#8c706e] uppercase tracking-wider">
-                โปรไฟล์ผู้ดูแล
+              <span className="block text-[9px] font-bold text-[#8c706e] uppercase tracking-wider truncate">
+                {teacherEmail || "โปรไฟล์ผู้ดูแล"}
               </span>
             </div>
           </div>
@@ -266,7 +294,7 @@ export default function TeacherDashboard({
                   คุณกำลังใช้ฐานข้อมูลออฟไลน์ในเบราว์เซอร์ เพื่อให้สิทธิ์เข้าถึง <b>Google Drive & Sheets</b> สำหรับจัดเก็บรายชื่อผู้เรียนและส่งประวัติคะแนนอัตโนมัติ กรุณากดเชื่อมโยง
                   {typeof window !== "undefined" && window.self !== window.top && (
                     <span className="block mt-1 text-[#8f4a46] font-semibold">
-                      💡 คำแนะนำ: เพื่อความถูกต้องในการเชื่อมต่อโดยไม่มีปัญหาระบบบล็อกป๊อปอัป แนะนำให้คลิกปุ่ม <b>"เปิดในแท็บใหม่"</b> ที่ขวาบนก่อนกดเชื่อมโยงครับ
+                      💡 คำแนะนำ: เพื่อความถูกต้องในการเชื่อมต่อโดยไม่มีปัญาระบบบล็อกป๊อปอัป แนะนำให้คลิกปุ่ม <b>"เปิดในแท็บใหม่"</b> ที่ขวาบนก่อนกดเชื่อมโยงครับ
                     </span>
                   )}
                 </span>
