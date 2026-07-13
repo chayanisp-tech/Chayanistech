@@ -27,6 +27,9 @@ export default function TeacherExams({
   const [timeLimit, setTimeLimit] = useState(40);
   const [questions, setQuestions] = useState<Question[]>([]);
 
+  // 🌟 State ใหม่สำหรับจำว่ากำลังแก้ไขคำถามข้อไหนอยู่ (ถ้าเป็น null แปลว่ากำลังสร้างข้อใหม่)
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+
   // Form fields for a new Question inside the exam
   const [qType, setQType] = useState<"choice" | "subjective">("choice");
   const [subMode, setSubMode] = useState<"text" | "canvas">("text"); 
@@ -134,7 +137,7 @@ export default function TeacherExams({
         const optAIdx = findColIndex(["ตัวเลือก a", "ตัวเลือก 1", "opt a", "option a", "optiona", "a"]);
         const optBIdx = findColIndex(["ตัวเลือก b", "ตัวเลือก 2", "opt b", "option b", "optionb", "b"]);
         const optCIdx = findColIndex(["ตัวเลือก c", "ตัวเลือก 3", "opt c", "option c", "optionc", "c"]);
-        const optDIdx = findColIndex(["ตัวเลือก d", "ตัวเลือก 4", "opt d", "option d", "optiond", "d"]);
+        const optDIdx = findColIndex(["ตัวเลือก d", "ตัวเลือก 4", "opt b", "option d", "optiond", "d"]);
         const optEIdx = findColIndex(["ตัวเลือก e", "ตัวเลือก 5", "opt e", "option e", "optione", "e"]);
         const correctIdx = findColIndex(["เฉลย", "คำตอบที่ถูกต้อง", "คำตอบ", "correct", "answer", "key", "answerindex"]);
         const imgIdx = findColIndex(["รูปภาพ", "image", "imageurl", "ลิงก์รูปภาพ", "urlรูปภาพ"]);
@@ -230,7 +233,32 @@ export default function TeacherExams({
   };
 
   // =========================================================
-  // 📝 เพิ่มข้อสอบลงรายการคำถามทีละข้อ
+  // ✏️ ดึงคำถามข้อเก่าขึ้นมาแก้ไขในฟอร์มด้านล่าง
+  // =========================================================
+  const handleSelectQuestionForEdit = (q: Question) => {
+    setEditingQuestionId(q.id);
+    setQType(q.type);
+    setQText(q.text);
+    setQImageUrl(q.imageUrl || "");
+    setQPoints(q.points);
+    
+    if (q.type === "choice") {
+      setQOptA(q.options[0] || "");
+      setQOptB(q.options[1] || "");
+      setQOptC(q.options[2] || "");
+      setQOptD(q.options[3] || "");
+      setQOptE(q.options[4] || "");
+      setQCorrect(q.answerIndex);
+    } else {
+      setSubMode((q as any).subjectiveMode || "text");
+    }
+
+    // เลื่อนหน้าจอลงไปที่ฟอร์มกรอกข้อมูลแบบนุ่มนวลเพื่อให้คุณครูรู้ว่าต้องแก้ไขตรงนี้
+    document.getElementById("questionFormSection")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // =========================================================
+  // 📝 เพิ่มหรืออัปเดตข้อสอบลงรายการคำถาม
   // =========================================================
   const handleAddQuestion = () => {
     setQError("");
@@ -246,22 +274,43 @@ export default function TeacherExams({
       }
     }
 
-    const newQ: Question = {
-      id: `Q-${Date.now()}-${questions.length + 1}`,
-      text: qText.trim(),
-      options: qType === "choice" 
-        ? [qOptA.trim(), qOptB.trim(), qOptC.trim(), qOptD.trim(), qOptE.trim()]
-        : [],
-      answerIndex: qType === "choice" ? qCorrect : -1,
-      points: Number(qPoints),
-      type: qType,
-      imageUrl: qImageUrl || undefined,
-      ...(qType === "subjective" ? { subjectiveMode: subMode } : {}),
-    };
-
-    setQuestions([...questions, newQ]);
+    if (editingQuestionId) {
+      // 🔄 โหมดอัปเดตข้อเก่า
+      setQuestions(prev => prev.map(q => {
+        if (q.id === editingQuestionId) {
+          return {
+            ...q,
+            text: qText.trim(),
+            options: qType === "choice" ? [qOptA.trim(), qOptB.trim(), qOptC.trim(), qOptD.trim(), qOptE.trim()] : [],
+            answerIndex: qType === "choice" ? qCorrect : -1,
+            points: Number(qPoints),
+            type: qType,
+            imageUrl: qImageUrl || undefined,
+            ...(qType === "subjective" ? { subjectiveMode: subMode } : {}),
+          };
+        }
+        return q;
+      }));
+      setEditingQuestionId(null);
+      alert("อัปเดตรายละเอียดคำถามข้อนี้สำเร็จ!");
+    } else {
+      // ➕ โหมดเพิ่มข้อใหม่ต่อท้าย
+      const newQ: Question = {
+        id: `Q-${Date.now()}-${questions.length + 1}`,
+        text: qText.trim(),
+        options: qType === "choice" 
+          ? [qOptA.trim(), qOptB.trim(), qOptC.trim(), qOptD.trim(), qOptE.trim()]
+          : [],
+        answerIndex: qType === "choice" ? qCorrect : -1,
+        points: Number(qPoints),
+        type: qType,
+        imageUrl: qImageUrl || undefined,
+        ...(qType === "subjective" ? { subjectiveMode: subMode } : {}),
+      };
+      setQuestions([...questions, newQ]);
+    }
     
-    // Reset Form
+    // Reset Form ช่องกรอก
     setQText("");
     setQImageUrl("");
     setQOptA("");
@@ -318,11 +367,13 @@ export default function TeacherExams({
     setQuestions([]);
     setIsCreating(false);
     setEditingExamId(null);
+    setEditingQuestionId(null);
     setQError("");
   };
 
   const handleRemoveQuestion = (idx: number) => {
     setQuestions(questions.filter((_, i) => i !== idx));
+    if (editingQuestionId) setEditingQuestionId(null);
   };
 
   const handleEditExam = (exam: Exam) => {
@@ -337,7 +388,6 @@ export default function TeacherExams({
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* ส่วนหัวข้อเว็บบอร์ดของคุณครู */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ข้อสอบวิชาภาษาจีน</h1>
@@ -364,7 +414,6 @@ export default function TeacherExams({
           </div>
 
           <form onSubmit={handleSaveExam} className="space-y-6">
-            {/* ข้อมูลทั่วไปของแบบทดสอบ */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-1">
                 <label htmlFor="examTitleInput" className="block text-xs font-bold text-[#59413f]">หัวข้อข้อสอบ</label>
@@ -427,10 +476,18 @@ export default function TeacherExams({
               ) : (
                 <div className="space-y-4">
                   {questions.map((q, idx) => (
-                    <div key={q.id} className="p-4 bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl flex justify-between items-start text-xs">
+                    <div key={q.id} className={`p-4 rounded-2xl flex justify-between items-start text-xs transition-all border ${editingQuestionId === q.id ? "bg-amber-50/70 border-amber-400 shadow-sm" : "bg-[#fff8f7] border-[#e0bfbc]/40"}`}>
                       <div>
-                        <p className="font-bold text-[#251817] text-sm">ข้อ {idx + 1}: {q.text} ({q.points} คะแนน)</p>
-                        {q.imageUrl && <img src={q.imageUrl} alt="โจทย์ภาพ" className="my-2 max-h-24 object-contain border rounded-lg" referrerPolicy="no-referrer" />}
+                        <p className="font-bold text-[#251817] text-sm flex items-center gap-2">
+                          ข้อ {idx + 1}: {q.text} ({q.points} คะแนน)
+                          {editingQuestionId === q.id && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold animate-pulse">กำลังแก้ไขข้อนี้</span>}
+                        </p>
+                        {q.imageUrl && (
+                          <div className="mt-2">
+                            <p className="text-[10px] text-gray-400 font-bold mb-1">รูปภาพประกอบประจำข้อ:</p>
+                            <img src={q.imageUrl} alt="โจทย์ภาพ" className="max-h-28 object-contain border border-gray-200 rounded-lg bg-white p-1" referrerPolicy="no-referrer" />
+                          </div>
+                        )}
                         {q.type === "choice" ? (
                           <ul className="mt-2 space-y-0.5 text-gray-600 font-medium">
                             {q.options.map((opt, oIdx) => (
@@ -443,7 +500,13 @@ export default function TeacherExams({
                           <span className="inline-block mt-2 px-2 py-0.5 bg-orange-100 text-orange-700 font-bold rounded">อัตนัย</span>
                         )}
                       </div>
-                      <button type="button" onClick={() => handleRemoveQuestion(idx)} className="text-red-500 hover:text-red-700 font-bold">ลบ</button>
+                      <div className="flex gap-2 shrink-0">
+                        <button type="button" onClick={() => handleSelectQuestionForEdit(q)} className="text-blue-600 hover:text-blue-800 font-bold underline flex items-center gap-0.5">
+                          <span className="material-symbols-outlined text-[14px]">edit</span> แก้ไขข้อมูล/รูป
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button type="button" onClick={() => handleRemoveQuestion(idx)} className="text-red-500 hover:text-red-700 font-bold">ลบ</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -479,10 +542,11 @@ export default function TeacherExams({
               </label>
             </div>
 
-            {/* ฟอร์มสร้างข้อสอบทีละข้อ */}
-            <div className="bg-[#fff8f7] border border-[#e0bfbc]/70 rounded-2xl p-6 space-y-4🔢">
+            {/* ฟอร์มสร้างข้อสอบทีละข้อ / โหมดแก้ไขข้อสอบเก่า */}
+            <div id="questionFormSection" className={`border rounded-2xl p-6 space-y-4 transition-all ${editingQuestionId ? "bg-amber-50/40 border-amber-400 ring-2 ring-amber-400/20" : "bg-[#fff8f7] border-[#e0bfbc]/70"}`}>
               <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1">
-                <span className="material-symbols-outlined">add_circle</span>สร้างคำถามใหม่แบบกำหนดเอง
+                <span className="material-symbols-outlined">{editingQuestionId ? "published_with_changes" : "add_circle"}</span>
+                {editingQuestionId ? "⚙️ กำลังปรับปรุงข้อมูลและรูปภาพข้อสอบเก่า" : "สร้างคำถามใหม่แบบกำหนดเอง"}
               </h5>
 
               <div className="space-y-1">
@@ -514,76 +578,50 @@ export default function TeacherExams({
                 <input id="qTextInput" type="text" placeholder="พิมพ์โจทย์ที่ต้องการ..." value={qText} onChange={(e) => setQText(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] text-sm font-semibold text-[#251817] bg-white outline-none focus:border-[#8e171c]" />
               </div>
 
-              {/* ส่วนประกอบอัปโหลดรูปภาพ */}
+              {/* ส่วนอัปโหลดรูปภาพ */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white/50 border border-[#e0bfbc]/40 rounded-2xl text-xs">
                 <div className="space-y-1">
-                  <label htmlFor="qImageFileInput" className="font-bold text-[#59413f] block">อัปโหลดไฟล์รูปภาพประกอบ</label>
+                  <label htmlFor="qImageFileInput" className="font-bold text-[#59413f] block">
+                    {editingQuestionId ? "🔄 อัปโหลดเปลี่ยนรูปใหม่สำหรับข้อนี้" : "อัปโหลดไฟล์รูปภาพประกอบ"}
+                  </label>
                   <input id="qImageFileInput" type="file" accept="image/*" onChange={handleImageFileChange} className="w-full text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:bg-[#ffe9e7] file:text-[#8e171c] file:font-bold hover:file:bg-[#ffdad7] cursor-pointer" />
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor="qImageUrlInput" className="font-bold text-[#59413f] block">URL รูปภาพปลายทาง</label>
+                  <label htmlFor="qImageUrlInput" className="font-bold text-[#59413f] block">URL รูปภาพบนระบบ Google Drive</label>
                   <input id="qImageUrlInput" type="text" placeholder="ลิงก์จากระบบฝากรูปภาพ..." value={qImageUrl} onChange={(e) => setQImageUrl(e.target.value)} className="w-full px-4 py-1.5 rounded-full border border-[#e0bfbc] bg-white outline-none focus:border-[#8e171c]" />
                 </div>
+                
+                {qImageUrl && (
+                  <div className="col-span-full flex flex-col items-center bg-white p-2 border rounded-xl mt-1">
+                    <p className="text-[10px] text-gray-400 font-bold mb-1">ตัวอย่างภาพประกอบปัจจุบัน:</p>
+                    <img src={qImageUrl} alt="Preview" className="max-h-32 object-contain" referrerPolicy="no-referrer" />
+                    <button type="button" onClick={() => setQImageUrl("")} className="mt-1 text-[10px] text-red-500 hover:underline">ลบรูปออก</button>
+                  </div>
+                )}
               </div>
 
-              {/* เริ่มต้นส่วนกล่องข้อมูลตัวเลือกตามข้อมูลที่คุณครูส่งมาตัวเต็ม */}
               {qType === "choice" ? (
                 <div className="space-y-4 animate-fade-in">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label htmlFor="qOptAInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก A</label>
-                      <input
-                        id="qOptAInput"
-                        type="text"
-                        placeholder="เช่น คุณครู"
-                        value={qOptA}
-                        onChange={(e) => setQOptA(e.target.value)}
-                        className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                      />
+                      <input id="qOptAInput" type="text" placeholder="เช่น คุณครู" value={qOptA} onChange={(e) => setQOptA(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                     </div>
                     <div className="space-y-1">
                       <label htmlFor="qOptBInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก B</label>
-                      <input
-                        id="qOptBInput"
-                        type="text"
-                        placeholder="เช่น นักเรียน"
-                        value={qOptB}
-                        onChange={(e) => setQOptB(e.target.value)}
-                        className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                      />
+                      <input id="qOptBInput" type="text" placeholder="เช่น นักเรียน" value={qOptB} onChange={(e) => setQOptB(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                     </div>
                     <div className="space-y-1">
                       <label htmlFor="qOptCInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก C</label>
-                      <input
-                        id="qOptCInput"
-                        type="text"
-                        placeholder="เช่น หมอ"
-                        value={qOptC}
-                        onChange={(e) => setQOptC(e.target.value)}
-                        className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                      />
+                      <input id="qOptCInput" type="text" placeholder="เช่น หมอ" value={qOptC} onChange={(e) => setQOptC(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                     </div>
                     <div className="space-y-1">
                       <label htmlFor="qOptDInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก D</label>
-                      <input
-                        id="qOptDInput"
-                        type="text"
-                        placeholder="เช่น ตำรวจ"
-                        value={qOptD}
-                        onChange={(e) => setQOptD(e.target.value)}
-                        className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                      />
+                      <input id="qOptDInput" type="text" placeholder="เช่น ตำรวจ" value={qOptD} onChange={(e) => setQOptD(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                     </div>
                     <div className="space-y-1 md:col-span-2">
                       <label htmlFor="qOptEInput" className="block text-xs font-bold text-[#59413f]">ตัวเลือก E (ตัวเลือกที่ 5)</label>
-                      <input
-                        id="qOptEInput"
-                        type="text"
-                        placeholder="เช่น ทหาร"
-                        value={qOptE}
-                        onChange={(e) => setQOptE(e.target.value)}
-                        className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                      />
+                      <input id="qOptEInput" type="text" placeholder="เช่น ทหาร" value={qOptE} onChange={(e) => setQOptE(e.target.value)} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                     </div>
                   </div>
                 </div>
@@ -602,15 +640,8 @@ export default function TeacherExams({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qType === "choice" && (
                   <div className="space-y-1">
-                    <label htmlFor="qCorrectSelect" className="block text-xs font-bold text-[#59413f]">
-                      ตัวเลือกที่ถูกต้อง
-                    </label>
-                    <select
-                      id="qCorrectSelect"
-                      value={qCorrect}
-                      onChange={(e) => setQCorrect(Number(e.target.value))}
-                      className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white cursor-pointer"
-                    >
+                    <label htmlFor="qCorrectSelect" className="block text-xs font-bold text-[#59413f]">ตัวเลือกที่ถูกต้อง</label>
+                    <select id="qCorrectSelect" value={qCorrect} onChange={(e) => setQCorrect(Number(e.target.value))} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white cursor-pointer">
                       <option value={0}>ตัวเลือก A</option>
                       <option value={1}>ตัวเลือก B</option>
                       <option value={2}>ตัวเลือก C</option>
@@ -621,48 +652,42 @@ export default function TeacherExams({
                 )}
 
                 <div className="space-y-1">
-                  <label htmlFor="qPointsInput" className="block text-xs font-bold text-[#59413f]">
-                    คะแนนรายข้อ
-                  </label>
-                  <input
-                    id="qPointsInput"
-                    type="number"
-                    min={1}
-                    value={qPoints}
-                    onChange={(e) => setQPoints(Number(e.target.value))}
-                    className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white"
-                  />
+                  <label htmlFor="qPointsInput" className="block text-xs font-bold text-[#59413f]">คะแนนรายข้อ</label>
+                  <input id="qPointsInput" type="number" min={1} value={qPoints} onChange={(e) => setQPoints(Number(e.target.value))} className="w-full px-4 py-2 rounded-full border border-[#e0bfbc] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817] bg-white" />
                 </div>
               </div>
 
-              {qError && (
-                <p className={`text-xs font-bold ${qError.includes("สำเร็จ") ? "text-green-600" : qError.includes("กำลัง") ? "text-amber-600" : "text-red-600"}`}>
-                  {qError}
-                </p>
-              )}
+              {qError && <p className={`text-xs font-bold ${qError.includes("สำเร็จ") ? "text-green-600" : qError.includes("กำลัง") ? "text-amber-600" : "text-red-600"}`}>{qError}</p>}
 
-              <button
-                type="button"
-                onClick={handleAddQuestion}
-                className="w-full mt-2 py-3 bg-white border border-[#8e171c] hover:bg-[#ffe9e7]/30 text-[#8e171c] font-bold text-xs rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">add</span>
-                เพิ่มคำถามข้อนี้ลงในชุดข้อสอบ
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddQuestion}
+                  className="flex-1 mt-2 py-3 bg-white border border-[#8e171c] hover:bg-[#ffe9e7]/30 text-[#8e171c] font-bold text-xs rounded-full transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">{editingQuestionId ? "save" : "add"}</span>
+                  {editingQuestionId ? "🔄 บันทึกความเปลี่ยนแปลงลงในข้อสอบข้อนี้" : "เพิ่มคำถามข้อนี้ลงในชุดข้อสอบ"}
+                </button>
+                {editingQuestionId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingQuestionId(null);
+                      setQText("");
+                      setQImageUrl("");
+                      setQOptA(""); setQOptB(""); setQOptC(""); setQOptD(""); setQOptE("");
+                    }}
+                    className="mt-2 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs rounded-full transition-all"
+                  >
+                    ยกเลิกการแก้ข้อนี้
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-[#e0bfbc]/30">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="px-5 py-2 rounded-full border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-all cursor-pointer"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 rounded-full bg-[#8e171c] hover:bg-[#8c161b] text-white text-xs font-bold transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer"
-              >
+              <button type="button" onClick={handleCancel} className="px-5 py-2 rounded-full border border-gray-300 text-gray-700 text-xs font-bold hover:bg-gray-50 transition-all cursor-pointer">ยกเลิก</button>
+              <button type="submit" className="px-6 py-2 rounded-full bg-[#8e171c] hover:bg-[#8c161b] text-white text-xs font-bold transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer">
                 {editingExamId ? "บันทึกการแก้ไขข้อสอบ" : "บันทึกชุดข้อสอบ"}
               </button>
             </div>
@@ -674,68 +699,33 @@ export default function TeacherExams({
             <div className="col-span-full py-16 text-center bg-white border border-[#e0bfbc] rounded-3xl">
               <span className="material-symbols-outlined text-4xl text-[#e0bfbc]">folder_open</span>
               <p className="text-sm font-semibold text-[#59413f] mt-2">ยังไม่มีชุดข้อสอบจีนในระบบคลังขณะนี้</p>
-              <button
-                onClick={() => setIsCreating(true)}
-                className="mt-4 px-4 py-2 bg-[#8e171c] text-white text-xs font-bold rounded-full cursor-pointer hover:bg-[#8c161b] transition-all"
-              >
-                เริ่มสร้างข้อสอบชุดแรก
-              </button>
+              <button onClick={() => setIsCreating(true)} className="mt-4 px-4 py-2 bg-[#8e171c] text-white text-xs font-bold rounded-full cursor-pointer hover:bg-[#8c161b] transition-all">เริ่มสร้างข้อสอบชุดแรก</button>
             </div>
           ) : (
             exams.map((exam) => (
               <div key={exam.id} className="bg-white border border-[#e0bfbc] rounded-3xl p-5 shadow-sm flex flex-col justify-between space-y-4">
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="px-2.5 py-0.5 bg-[#ffe9e7] text-[#8e171c] font-black text-[10px] rounded-full uppercase tracking-wide">
-                      {exam.courseCode}
-                    </span>
+                    <span className="px-2.5 py-0.5 bg-[#ffe9e7] text-[#8e171c] font-black text-[10px] rounded-full uppercase tracking-wide">{exam.courseCode}</span>
                     <button
                       onClick={() => onToggleActive(exam.id)}
-                      className={`px-3 py-1 text-[10px] font-bold rounded-full border transition-all cursor-pointer ${
-                        exam.isActive 
-                          ? "bg-green-50 text-green-700 border-green-200" 
-                          : "bg-gray-50 text-gray-400 border-gray-200"
-                      }`}
+                      className={`px-3 py-1 text-[10px] font-bold rounded-full border transition-all cursor-pointer ${exam.isActive ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-400 border-gray-200"}`}
                     >
                       {exam.isActive ? "🟢 เปิดให้นักเรียนสอบ" : "⚪ ปิดระบบสอบชั่วคราว"}
                     </button>
                   </div>
                   <h3 className="text-lg font-bold text-[#251817] line-clamp-1">{exam.title}</h3>
-                  <p className="text-xs text-[#59413f] line-clamp-2 h-8 font-medium leading-relaxed">
-                    {exam.description || "ไม่มีข้อมูลรายละเอียดคำชี้แจงสำหรับหัวข้อนี้"}
-                  </p>
+                  <p className="text-xs text-[#59413f] line-clamp-2 h-8 font-medium leading-relaxed">{exam.description || "ไม่มีข้อมูลรายละเอียดคำชี้แจงสำหรับหัวข้อนี้"}</p>
                 </div>
 
                 <div className="pt-3 border-t border-[#e0bfbc]/30 flex justify-between items-center text-xs">
                   <div className="flex gap-3 text-[#59413f] font-semibold text-[11px]">
-                    <span className="flex items-center gap-0.5">
-                      <span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>
-                      {exam.questions.length} ข้อ
-                    </span>
-                    <span className="flex items-center gap-0.5">
-                      <span className="material-symbols-outlined text-[14px]">schedule</span>
-                      {exam.timeLimitMinutes} นาที
-                    </span>
+                    <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>{exam.questions.length} ข้อ</span>
+                    <span className="flex items-center gap-0.5"><span className="material-symbols-outlined text-[14px]">schedule</span>{exam.timeLimitMinutes} นาที</span>
                   </div>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEditExam(exam)}
-                      className="p-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-lg flex items-center cursor-pointer transition-all"
-                      title="แก้ไขข้อสอบ"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">edit</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (confirm("คุณครูแน่ใจว่าต้องการลบชุดข้อสอบนี้ออกจากคลังข้อมูลถาวร?")) {
-                          onDeleteExam(exam.id);
-                        }
-                      }}
-                      className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg flex items-center cursor-pointer transition-all"
-                      title="ลบข้อสอบ"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">delete</span>
-                    </button>
+                    <button onClick={() => handleEditExam(exam)} className="p-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-lg flex items-center cursor-pointer transition-all" title="แก้ไขข้อสอบ"><span className="material-symbols-outlined text-[15px]">edit</span></button>
+                    <button onClick={() => { if (confirm("คุณครูแน่ใจว่าต้องการลบชุดข้อสอบนี้ออกจากคลังข้อมูลถาวร?")) { onDeleteExam(exam.id); } }} className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg flex items-center cursor-pointer transition-all" title="ลบข้อสอบ"><span className="material-symbols-outlined text-[15px]">delete</span></button>
                   </div>
                 </div>
               </div>
