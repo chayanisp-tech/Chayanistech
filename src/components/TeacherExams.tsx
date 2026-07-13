@@ -151,7 +151,7 @@ export default function TeacherExams({
 
         const importedQuestions: Question[] = [];
 
-        for (let i = 1; i < jsonData.length; i++) {
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           if (!row || row.length === 0 || !row[textIdx]) continue;
 
