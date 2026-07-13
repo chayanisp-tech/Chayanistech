@@ -108,11 +108,30 @@ export default function TeacherExams({
           return;
         }
 
-        const headers = jsonData[0].map((h) => String(h || "").trim().toLowerCase());
+// --- เริ่มต้นโค้ดปรับปรุงใหม่เพื่อความยืดหยุ่น ---
+    
+    // 1. ค้นหาว่าหัวตารางจริงๆ อยู่แถวไหน (สแกนหาแถวที่มีคำว่า คำถาม หรือ ตัวเลือก หรือ เฉลย)
+    let headerRowIndex = 0;
+    for (let i = 0; i < jsonData.length; i++) {
+      const row = jsonData[i];
+      if (row && row.some(cell => {
+        const str = String(cell).toLowerCase();
+        return str.includes("คำถาม") || str.includes("question") || str.includes("โจทย์");
+      })) {
+        headerRowIndex = i;
+        break;
+      }
+    }
 
-        const findColIndex = (keywords: string[]) => {
-          return headers.findIndex((h) => keywords.some((k) => h.includes(k)));
-        };
+    // 2. ดึงหัวข้อคอลัมน์จากแถวที่เจอจริงๆ
+    const headers = jsonData[headerRowIndex].map((h) => String(h || "").trim().toLowerCase());
+    console.log("หัวตารางที่ระบบตรวจเจอจริง ๆ อยู่ในแถวที่:", headerRowIndex + 1, headers);
+
+    const findColIndex = (keywords: string[]) => {
+      return headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+    };
+    
+    // --- สิ้นสุดโค้ดที่ปรับปรุง ---
 
         const typeIdx = findColIndex(["ประเภท", "type", "ชนิด"]);
         const textIdx = findColIndex(["คำถาม", "โจทย์", "question", "text", "โจทย์คำถาม"]);
