@@ -74,7 +74,7 @@ export default function TeacherStudents({
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">รายชื่อนักเรียน</h1>
           <p className="text-sm text-[#59413f] mt-1">
-            จัดการฐานข้อมูลผู้เรียนและตรวจสอบทะเบียนผู้มีสิทธิ์สอบภาษาจีนกลาง
+            จัดการฐานข้อมูลผู้เรียนและตรวจสอบผู้มีสิทธิ์สอบ
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
@@ -82,7 +82,7 @@ export default function TeacherStudents({
             onClick={onBulkLoadDefaults}
             className="px-4 py-2 text-xs font-bold border border-[#e0bfbc] hover:bg-[#ffe9e7] text-[#8e171c] rounded-full transition-all cursor-pointer"
           >
-            โหลดรายชื่อเริ่มต้น
+            โหลดรายชื่อตัวอย่าง
           </button>
           <button
             onClick={() => {
@@ -143,19 +143,15 @@ export default function TeacherStudents({
               <label htmlFor="studentClassInput" className="block text-xs font-semibold text-[#59413f]">
                 ชั้นเรียน
               </label>
-              <select
-                id="studentClassInput"
-                value={newClass}
-                onChange={(e) => setNewClass(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full border border-[#8c706e] focus:border-[#8e171c] outline-none text-sm font-semibold text-[#251817]"
-              >
-                <option value="ม.4/1">ม.4/1</option>
-                <option value="ม.4/2">ม.4/2</option>
-                <option value="ม.5/1">ม.5/1</option>
-                <option value="ม.5/2">ม.5/2</option>
-                <option value="ม.6/1">ม.6/1</option>
-                <option value="ม.6/2">ม.6/2</option>
-              </select>
+             <input
+  id="studentClassInput"
+  type="text"
+  placeholder="พิมพ์ชั้นเรียน เช่น ม.4/7 หรือ ม.5/1"
+  value={newClass}
+  onChange={(e) => setNewClass(e.target.value)}
+  className="w-full px-4 py-2 rounded-full border border-[#8c706e] focus:border-[#8e171c] outline-none text-sm font-semibold text-slate-800 bg-white"
+  required
+/>
             </div>
 
             {errorText && <p className="text-xs text-[#ba1a1a] font-semibold">{errorText}</p>}
