@@ -294,7 +294,7 @@ export default function StudentWelcome({
       {/* Footer Information */}
       <footer className="py-6 px-6 border-t border-[#e0bfbc]/20">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-[#59413f]">
-          <div>© 2026 ห้องเรียนเหล่าซรือแบมแบม (Thailand). สงวนลิขสิทธิ์</div>
+          <div>© 2026 ห้องเรียนเหล่าซรือแบมแบม (Thailand). สงวนลิขสิทธิ์ | พัฒนาโดย คุณครูชญานิศ  พลวาปี]</div>
           <div className="flex gap-6">
             <a href="#" className="hover:text-[#8e171c] transition-colors">
               นโยบายความเป็นส่วนตัว
