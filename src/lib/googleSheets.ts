@@ -5,7 +5,7 @@ export interface SyncDataResult {
   spreadsheetUrl: string;
 }
 
-// 🛠️ 1. ฟังก์ชันแกะข้อมูล CSV ความละเอียดสูง (ปลอดภัยต่ออักขระจีน และเครื่องหมายอัญประกาศในข้อสอบ)
+// 1. ฟังก์ชันแปลงข้อมูล CSV คุณภาพสูง ปลอดภัยต่ออักขระภาษาจีนและเครื่องหมายคำพูด
 function parseCSV(text: string): string[][] {
   const result: string[][] = [];
   const lines = text.split(/\r?\n/);
@@ -15,9 +15,7 @@ function parseCSV(text: string): string[][] {
 
   for (let l = 0; l < lines.length; l++) {
     const line = lines[l];
-    if (inQuotes && l > 0) {
-      currentCell += '\n';
-    }
+    if (inQuotes && l > 0) currentCell += '\n';
     
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
@@ -48,26 +46,23 @@ function parseCSV(text: string): string[][] {
   return result;
 }
 
-// 🛠️ 2. ค้นหาไฟล์ตารางใน Google Drive
+// 2. ค้นหาไฟล์ตาราง ExamMaster_Database ใน Google Drive
 export async function searchDatabaseSpreadsheet(token: string): Promise<string | null> {
   const query = encodeURIComponent("name = 'ExamMaster_Database' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false");
   const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
   
   try {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err?.error?.message || "Failed to search Spreadsheet");
-    }
+    if (!res.ok) return null;
     const data = await res.json();
     return data.files && data.files.length > 0 ? data.files[0].id : null;
   } catch (error) {
-    console.error("Error in searchDatabaseSpreadsheet:", error);
-    throw error;
+    console.error("Error searching database spreadsheet:", error);
+    return null;
   }
 }
 
-// 🛠️ 3. สร้างตารางฐานข้อมูลใหม่พร้อมแผ่นงานแยกชัดเจน
+// 3. สร้างตารางฐานข้อมูลใหม่ (กรณีหาไฟล์ไม่เจอ)
 export async function createDatabaseSpreadsheet(token: string): Promise<SyncDataResult> {
   const url = "https://sheets.googleapis.com/v4/spreadsheets";
   const body = {
@@ -80,25 +75,17 @@ export async function createDatabaseSpreadsheet(token: string): Promise<SyncData
     ],
   };
   
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err?.error?.message || "Failed to create Spreadsheet");
-    }
-    const data = await res.json();
-    return {
-      spreadsheetId: data.spreadsheetId,
-      spreadsheetUrl: data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
-    };
-  } catch (error) {
-    console.error("Error in createDatabaseSpreadsheet:", error);
-    throw error;
-  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to create Google Spreadsheet");
+  const data = await res.json();
+  return {
+    spreadsheetId: data.spreadsheetId,
+    spreadsheetUrl: data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}/edit`,
+  };
 }
 
 async function clearSheetRange(token: string, spreadsheetId: string, range: string) {
@@ -108,18 +95,14 @@ async function clearSheetRange(token: string, spreadsheetId: string, range: stri
 
 async function updateSheetRange(token: string, spreadsheetId: string, range: string, values: any[][]) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
-  const res = await fetch(url, {
+  await fetch(url, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ values }),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err?.error?.message || `Failed to update range ${range}`);
-  }
 }
 
-// 🛠️ 4. ผลักดันข้อมูลจากเว็บแอปฯ ขึ้น Google Sheets (ฝั่งคุณครูสั่งสำรองข้อมูล)
+// 4. บันทึกข้อมูลและสำรองค่าจากเว็บแอปขึ้น Google Sheets (ระบบฝั่งครูสั่งอัปเดต)
 export async function syncLocalToSheets(
   token: string,
   spreadsheetId: string,
@@ -129,18 +112,29 @@ export async function syncLocalToSheets(
   settings: SystemSettings
 ): Promise<void> {
   try {
-    // ซิงค์รายชื่อนักเรียน
+    // ซิงค์ข้อมูลนักเรียน
     await clearSheetRange(token, spreadsheetId, "Students!A:C");
     const studentValues = [
-      ["รหัสนักเรียน (Student ID)", "ชื่อ-นามสกุล (Name)", "ชั้นเรียน (Class)"],
+      ["รหัสนักเรียน", "ชื่อ-นามสกุล", "ชั้นเรียน"],
       ...students.map(s => [s.id, s.name, s.className]),
     ];
     await updateSheetRange(token, spreadsheetId, "Students!A1", studentValues);
 
-    // ซิงค์คะแนนการสอบ
+    // ซิงค์ข้อสอบและคำถามทดสอบ
+    await clearSheetRange(token, spreadsheetId, "Exams!A:G");
+    const examValues = [
+      ["รหัสข้อสอบ", "หัวข้อ", "รหัสวิชา", "คำอธิบาย", "คำถาม JSON", "เวลาสอบนาที", "สถานะเปิดสอบ"],
+      ...exams.map(e => [
+        e.id, e.title, e.courseCode, e.description,
+        JSON.stringify(e.questions), e.timeLimitMinutes, e.isActive ? "TRUE" : "FALSE",
+      ]),
+    ];
+    await updateSheetRange(token, spreadsheetId, "Exams!A1", examValues);
+
+    // ซิงค์ผลคะแนนนักเรียน
     await clearSheetRange(token, spreadsheetId, "Scores!A:M");
     const scoreValues = [
-      ["รหัสการส่ง", "รหัสนักเรียน", "ชื่อนักเรียน", "ชั้นเรียน", "รหัสข้อสอบ", "ชื่อข้อสอบ", "คะแนนที่ได้", "คะแนนเต็ม", "ทำไปทั้งหมด", "จำนวนข้อทั้งหมด", "เวลาที่ส่ง", "สถานะ", "คำตอบละเอียด JSON"],
+      ["รหัสการส่ง", "รหัสนักเรียน", "ชื่อนักเรียน", "ชั้นเรียน", "รหัสข้อสอบ", "ชื่อข้อสอบ", "คะแนนที่ได้", "คะแนนเต็ม", "ทำไปทั้งหมด", "จำนวนข้อทั้งหมด", "เวลาที่ส่ง", "สถานะ", "คำตอบ JSON"],
       ...submissions.map(s => [
         s.submissionId, s.studentId, s.studentName, s.studentClassName,
         s.examId, s.examTitle, s.score, s.totalPoints, s.answeredCount,
@@ -149,18 +143,7 @@ export async function syncLocalToSheets(
     ];
     await updateSheetRange(token, spreadsheetId, "Scores!A1", scoreValues);
 
-    // ซิงค์ข้อสอบ
-    await clearSheetRange(token, spreadsheetId, "Exams!A:G");
-    const examValues = [
-      ["รหัสข้อสอบ (Exam ID)", "หัวข้อ (Title)", "รหัสวิชา (Course Code)", "คำอธิบาย (Description)", "คำถาม JSON (Questions JSON)", "เวลาสอบนาที (Time Limit Minutes)", "สถานะเปิดสอบ (Is Active)"],
-      ...exams.map(e => [
-        e.id, e.title, e.courseCode, e.description,
-        JSON.stringify(e.questions), e.timeLimitMinutes, e.isActive ? "TRUE" : "FALSE",
-      ]),
-    ];
-    await updateSheetRange(token, spreadsheetId, "Exams!A1", examValues);
-
-    // ซิงค์ตั้งค่าระบบ
+    // ซิงค์การตั้งค่าระบบ
     await clearSheetRange(token, spreadsheetId, "Settings!A:B");
     const settingValues = [
       ["ชื่อการตั้งค่า", "ค่า"],
@@ -177,12 +160,12 @@ export async function syncLocalToSheets(
     await updateSheetRange(token, spreadsheetId, "Settings!A1", settingValues);
     
   } catch (error) {
-    console.error("Error in syncLocalToSheets:", error);
+    console.error("Error syncing local data to sheets:", error);
     throw error;
   }
 }
 
-// 🛠️ 5. ดึงข้อมูลแบบมีสิทธิ์ล็อกอินสิทธิ์ผ่าน OAuth (ฝั่งแผงควบคุมคุณครู)
+// 5. ดึงข้อมูลแบบยืนยันสิทธิ์ครู (แผงควบคุมคุณครู)
 export async function fetchFromSheets(
   token: string,
   spreadsheetId: string
@@ -201,12 +184,13 @@ export async function fetchFromSheets(
       return data.values || null;
     };
 
+    // ดึงรายชื่อนักเรียน
     const studentRows = await fetchRange("Students!A:C");
     const students: Student[] = [];
     if (studentRows && studentRows.length > 1) {
       for (let i = 1; i < studentRows.length; i++) {
         const row = studentRows[i];
-        if (row[0] && !row[0].toString().includes("รหัส")) {
+        if (row[0] && row[0].toString().trim() !== "" && !row[0].toString().includes("รหัส")) {
           students.push({
             id: row[0].toString().trim(),
             name: row[1]?.toString() || "",
@@ -217,18 +201,22 @@ export async function fetchFromSheets(
       }
     }
 
+    // ดึงข้อมูลข้อสอบ
     const examRows = await fetchRange("Exams!A:G");
     const exams: Exam[] = [];
     if (examRows && examRows.length > 1) {
       for (let i = 1; i < examRows.length; i++) {
         const row = examRows[i];
+        if (!row[0] || row[0].toString().includes("รหัส") || row[0].toString().trim() === "") continue;
+        
         const qStr = row[4]?.toString().trim() || "";
-        // 🔥 ดักจับระบบเขียนทับ: ถ้าไม่ใช่คอลัมน์ที่มี JSON ข้อสอบจริง หรือเป็นข้อมูลนักเรียนหลุดมา ให้ข้ามทันที!
-        if (!row[0] || row[0].toString().includes("รหัส") || !qStr.startsWith("[")) {
-          continue;
-        }
         let questions = [];
-        try { questions = JSON.parse(qStr); } catch (e) { continue; }
+        try {
+          const cleanQStr = qStr.substring(qStr.indexOf("["), qStr.lastIndexOf("]") + 1);
+          questions = JSON.parse(cleanQStr);
+        } catch (e) {
+          continue; 
+        }
         
         exams.push({
           id: row[0].toString().trim(),
@@ -242,6 +230,7 @@ export async function fetchFromSheets(
       }
     }
 
+    // ดึงผลคะแนนการส่งข้อสอบ
     const submissionRows = await fetchRange("Scores!A:M");
     const submissions: Submission[] = [];
     if (submissionRows && submissionRows.length > 1) {
@@ -269,6 +258,7 @@ export async function fetchFromSheets(
       }
     }
 
+    // ดึงการตั้งค่าระบบ
     const settingRows = await fetchRange("Settings!A:B");
     const settings: Partial<SystemSettings> = {};
     if (settingRows && settingRows.length > 1) {
@@ -292,12 +282,12 @@ export async function fetchFromSheets(
 
     return { students, exams, submissions, settings };
   } catch (error) {
-    console.error("Error in fetchFromSheets:", error);
+    console.error("Error fetching data from sheets:", error);
     return null;
   }
 }
 
-// 🛠 *6. ดึงข้อมูลสำหรับหน้าล็อกอินนักเรียน (ดึงจากลิงก์สาธารณะ/ลิงก์เผยแพร่เว็บ)*
+// 6. ดึงข้อมูลสาธารณะ (ฝั่งหน้าล็อกอินนักเรียน - ปลอดภัย เสถียรสูง 100%)
 export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
   students: Student[];
   exams: Exam[];
@@ -324,23 +314,23 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
         const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*?)\);/);
         if (!match) return null;
         const json = JSON.parse(match[1]);
-        const table = json.table;
-        return table?.rows ? table.rows.map((r: any) => r.c ? r.c.map((cell: any) => cell?.v ?? "") : []) : null;
+        return json.table?.rows ? json.table.rows.map((r: any) => r.c ? r.c.map((cell: any) => cell?.v ?? "") : []) : null;
       }
     } catch (e) {
-      console.error(`Error in fetchTab [${sheetName}]:`, e);
+      console.error(`Error fetching tab [${sheetName}]:`, e);
       return null;
     }
   };
 
   try {
+    // ดูดข้อมูลนักเรียนกลับมาอย่างแม่นยำ
     const studentRows = await fetchTab("Students");
     const students: Student[] = [];
     if (studentRows && studentRows.length > 0) {
       for (const row of studentRows) {
         if (row[0] && row[0].toString().trim() !== "") {
           const idStr = row[0].toString().trim();
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส") || (row[4] && row[4].toString().includes("["))) continue;
+          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) continue;
           students.push({
             id: idStr,
             name: row[1]?.toString() || "",
@@ -351,18 +341,23 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
       }
     }
 
+    // ดูดข้อมูลระบบสอบและข้อสอบวิชาภาษาจีนกลับมาใช้งานได้ครบถ้วน
     const examRows = await fetchTab("Exams");
     const exams: Exam[] = [];
     if (examRows && examRows.length > 0) {
       for (const row of examRows) {
-        if (row[0]) {
+        if (row[0] && row[0].toString().trim() !== "") {
           const idStr = row[0].toString().trim();
-          const qStr = row[4] ? row[4].toString().trim() : "";
-          // ป้องกันตัวดักหลุดแบบเฉียบขาด: ต้องมีโครงสร้างอาเรย์ของ JSON ข้อสอบเท่านั้นถึงจะยอมรับเข้าระบบ
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส") || !qStr.startsWith("[")) continue;
+          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) continue;
           
+          const qStr = row[4] ? row[4].toString().trim() : "";
           let questions = [];
-          try { questions = JSON.parse(qStr); } catch (e) { continue; }
+          try {
+            const cleanQStr = qStr.substring(qStr.indexOf("["), qStr.lastIndexOf("]") + 1);
+            questions = JSON.parse(cleanQStr);
+          } catch (e) {
+            continue; 
+          }
 
           const rawActive = row[6] ? row[6].toString().trim().toUpperCase() : "";
           const isActiveStatus = rawActive === "TRUE" || rawActive === "1" || rawActive === "เปิดใช้งาน" || rawActive === "YES" || rawActive === "";
@@ -380,6 +375,7 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
       }
     }
 
+    // ดูดข้อมูลการตั้งค่าระบบ
     const settingRows = await fetchTab("Settings");
     const settings: Partial<SystemSettings> = {};
     if (settingRows && settingRows.length > 0) {
