@@ -1,19 +1,16 @@
 import React, { useRef, useEffect, useState } from "react";
-// 🌟 1. Import ฟังก์ชันอัปโหลดจากไฟล์ firebase configuration ของคุณ
-import { uploadDrawingToStorage } from "../lib/firebase";
 
 interface DrawingCanvasProps {
-  value: string;         // ลิงก์ URL คลาวด์ หรือ Base64 (ถ้ามี)
+  value: string;         // ก้อน Base64 แบบบีบอัด (ถ้ามี)
   onChange: (url: string) => void; 
-  studentId: string;     // 🌟 รับเพิ่มเพื่อระบุนักเรียน
-  questionId: string;    // 🌟 รับเพิ่มเพื่อระบุข้อสอบ
+  studentId: string;     // รับเพื่อรักษาโครงสร้าง props เดิมไว้
+  questionId: string;    // รับเพื่อรักษาโครงสร้าง props เดิมไว้
 }
 
 export default function DrawingCanvas({ value, onChange, studentId, questionId }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  // 🌟 เพิ่ม State ไว้เช็คว่ากำลังอัปโหลดขึ้นคลาวด์ไหม เพื่อเปลี่ยนสีปุ่มบันทึก
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // ใช้แทนสถานะกำลังบีบอัดภาพ
 
   // กำหนดขนาดและโครงสร้างของตารางคัดจีน
   const COLS = 5;       
@@ -77,8 +74,6 @@ export default function DrawingCanvas({ value, onChange, studentId, questionId }
     if (value) {
       const img = new Image();
       img.src = value;
-      // รองรับกรณีที่ลิงก์เป็น Cross-Origin จาก Firebase Storage
-      img.crossOrigin = "anonymous"; 
       img.onload = () => {
         ctx.drawImage(img, 0, 0);
       };
@@ -152,24 +147,39 @@ export default function DrawingCanvas({ value, onChange, studentId, questionId }
     setIsDrawing(false);
   };
 
-  // 🌟 2. ปรับปรุงปุ่มบันทึก: ให้เด็กกดอัปโหลดขึ้นคลาวด์แยกต่างหากเมื่อเขียนเสร็จพอใจแล้ว
+  // 🌟 ปรับปรุงฟังก์ชันบันทึก: ย่อขนาดและบีบอัดรูปภาพลงเหลือขนาดจิ๋วทันทีก่อนส่งกลับ
   const saveToCloud = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     try {
       setIsUploading(true);
-      const dataUrl = canvas.toDataURL(); // แปลงภาพจากสมุดคัดข้อนี้
       
-      // ส่งข้อมูลขึ้น Firebase Storage ณ วินาทีนี้เลย
-      const downloadUrl = await uploadDrawingToStorage(dataUrl, studentId, questionId);
-      
-      // ส่งลิงก์ URL สั้นๆ (https://...) กลับไปที่คำตอบหลักของนักเรียน
-      onChange(downloadUrl); 
-      alert("✅ บันทึกคำตอบภาพวาดข้อนี้ขึ้นคลาวด์สำเร็จ!");
+      // 1. สร้าง Canvas จำลองหลังบ้านเพื่อทำหน้าที่แปลงสัดส่วนและย่อรูป
+      const resizeCanvas = document.createElement("canvas");
+      const ctx = resizeCanvas.getContext("2d");
+
+      // บังคับหน้ากว้างของรูปให้เหลือ 400px (ความคมชัดกำลังสวยงามสำหรับเปิดบนจอครู)
+      const targetWidth = 400;
+      const targetHeight = (canvas.height / canvas.width) * targetWidth;
+
+      resizeCanvas.width = targetWidth;
+      resizeCanvas.height = targetHeight;
+
+      if (ctx) {
+        // 2. คัดลอกลายเส้นของเด็กจากแคนวาสจริง ลงแคนวาสจำลองที่ย่อส่วนแล้ว
+        ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+        // 3. แปลงเป็นก้อน Base64 แบบ JPEG ความคมชัด 60% เพื่อลดขนาดไฟล์จาก MB เหลือเพียงไม่กี่ KB!
+        const compressedBase64 = resizeCanvas.toDataURL("image/jpeg", 0.6);
+        
+        // 4. ส่งค่า Base64 มินิกลับไปแทนลิงก์คลาวด์
+        onChange(compressedBase64); 
+        alert("✅ บันทึกคำตอบภาพวาดข้อนี้เรียบร้อยแล้วค่ะ!");
+      }
     } catch (error) {
-      console.error(error);
-      alert("❌ เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ กรุณาลองใหม่อีกครั้ง");
+      console.error("Compression error:", error);
+      alert("❌ เกิดข้อผิดพลาดในการบันทึกคำตอบภาพวาด");
     } finally {
       setIsUploading(false);
     }
@@ -210,7 +220,7 @@ export default function DrawingCanvas({ value, onChange, studentId, questionId }
 
       <div className="flex flex-wrap gap-2 justify-between items-center w-full px-2">
         <span className="text-[11px] font-bold text-[#8c706e]">
-          💡 แนะนำ: คัดเสร็จแล้ว อย่าลืมกดปุ่ม "บันทึกคำตอบภาพวาด" ด้านขวา
+          💡 แนะนำ: คัดเสร็จแล้ว อย่าลืมกดปุ่ม "บันทึกคำตอบข้อนี้" ด้านขวา
         </span>
         
         <div className="flex gap-2">
@@ -222,7 +232,6 @@ export default function DrawingCanvas({ value, onChange, studentId, questionId }
             ล้างสมุดคัด
           </button>
 
-          {/* 🌟 3. เพิ่มปุ่มกดเซฟส่งขึ้น Storage หลังเขียนเสร็จ */}
           <button
             type="button"
             onClick={saveToCloud}
@@ -231,7 +240,7 @@ export default function DrawingCanvas({ value, onChange, studentId, questionId }
               isUploading ? "bg-gray-400 cursor-not-allowed animate-pulse" : "bg-[#8f4a46] hover:bg-[#8e171c]"
             }`}
           >
-            {isUploading ? "กำลังบันทึก..." : "💾 บันทึกคำตอบภาพวาด"}
+            {isUploading ? "กำลังบันทึก..." : "💾 บันทึกคำตอบข้อนี้"}
           </button>
         </div>
       </div>
