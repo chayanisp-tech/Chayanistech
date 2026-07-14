@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
+// เพิ่ม Import สำหรับ Firebase Storage
+import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage"; 
 import firebaseConfig from "../../firebase-applet-config.json";
 
 // Initialize Firebase
@@ -9,6 +11,9 @@ export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId || "(default)");
+// สร้างและ Export ตัวแปร storage
+export const storage = getStorage(app); 
+
 export const googleProvider = new GoogleAuthProvider();
 // Request workspace scopes for Drive and Sheets
 googleProvider.addScope("https://www.googleapis.com/auth/drive.file");
@@ -103,4 +108,18 @@ export const logout = async () => {
   await signOut(auth);
   cachedAccessToken = null;
   localStorage.removeItem("temp_oauth_token");
+};
+
+// ฟังก์ชันสำหรับอัปโหลด Base64 ขึ้น Firebase Storage
+export const uploadDrawingToStorage = async (base64String: string, studentId: string, questionId: string): Promise<string> => {
+  // ตั้งชื่อไฟล์ไม่ให้ซ้ำกัน
+  const fileName = `exam_drawings/${studentId}_${questionId}_${Date.now()}.png`;
+  const storageRef = ref(storage, fileName);
+  
+  // อัปโหลดไฟล์ (ระบุว่าเป็น data_url)
+  await uploadString(storageRef, base64String, 'data_url');
+  
+  // ขอรับลิงก์ URL สำหรับนำไปแสดงผล
+  const downloadURL = await getDownloadURL(storageRef);
+  return downloadURL;
 };
