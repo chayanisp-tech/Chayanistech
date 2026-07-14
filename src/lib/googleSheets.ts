@@ -332,116 +332,107 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
   students: Student[];
   exams: Exam[];
   settings: Partial<SystemSettings>;
-} | null> {
+}> {
   const fetchTab = async (sheetName: string): Promise<any[][] | null> => {
-    try {
-      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn(`Failed to fetch public sheet: ${sheetName}`);
-        return null;
-      }
-      const text = await res.text();
-      // Extract JSON inside google.visualization.Query.setResponse(...)
-      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*?)\);/);
-      if (!match) return null;
-      const json = JSON.parse(match[1]);
-      const table = json.table;
-      if (!table || !table.rows) return null;
-
-      // Extract rows safely
-      return table.rows.map((r: any) => {
-        return r.c ? r.c.map((cell: any) => cell?.v ?? "") : [];
-      });
-    } catch (e) {
-      console.error(`Error in fetchTab for ${sheetName}:`, e);
-      return null;
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`HTTP_ERROR_${res.status}`);
     }
+    const text = await res.text();
+    
+    // ตรวจสอบว่าโดนเด้งไปหน้า Login หรือไม่ (เกิดกับบัญชีโรงเรียน/องค์กรที่จำกัดสิทธิ์ในโหมด Incognito)
+    if (text.trim().startsWith("<!DOCTYPE html") || text.includes("google.com/accounts") || text.includes("ServiceLogin")) {
+      throw new Error("ORGANIZATION_RESTRICTED");
+    }
+
+    // Extract JSON inside google.visualization.Query.setResponse(...)
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*?)\);/);
+    if (!match) {
+      throw new Error("INVALID_RESPONSE_FORMAT");
+    }
+    
+    const json = JSON.parse(match[1]);
+    const table = json.table;
+    if (!table || !table.rows) return null;
+
+    // Extract rows safely
+    return table.rows.map((r: any) => {
+      return r.c ? r.c.map((cell: any) => cell?.v ?? "") : [];
+    });
   };
 
-  try {
-    // 1. Fetch Students
-    const studentRows = await fetchTab("Students");
-    const students: Student[] = [];
-    if (studentRows && studentRows.length > 0) {
-      for (const row of studentRows) {
-        if (row[0] !== undefined && row[0] !== null && row[0] !== "") {
-          const idStr = row[0].toString().trim();
-          
-          // ข้ามแถวหัวตารางอย่างยืดหยุ่น
-          if (
-            idStr.toLowerCase().includes("id") || 
-            idStr.includes("รหัส") || 
-            idStr === ""
-          ) {
-            continue;
-          }
-          
-          students.push({
-            id: idStr,
-            name: row[1]?.toString() || "",
-            className: row[2]?.toString() || "",
-            department: row[2]?.toString() || "", // 🛠️ PATCH: บังคับใส่ทั้งสองชื่อคีย์เพื่อความเข้ากันได้ 100%
-          });
+  // ดึงข้อมูลแต่ละแท็บแบบตรวจสอบข้อผิดพลาดอย่างละเอียด
+  const studentRows = await fetchTab("Students");
+  const examRows = await fetchTab("Exams");
+  const settingRows = await fetchTab("Settings");
+
+  // 1. Parse Students
+  const students: Student[] = [];
+  if (studentRows && studentRows.length > 0) {
+    for (const row of studentRows) {
+      if (row[0] !== undefined && row[0] !== null && row[0] !== "") {
+        const idStr = row[0].toString().trim();
+        if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส") || idStr === "") {
+          continue;
         }
+        students.push({
+          id: idStr,
+          name: row[1]?.toString() || "",
+          className: row[2]?.toString() || "",
+          department: row[2]?.toString() || "",
+        });
       }
     }
-
-    // 2. Fetch Exams
-    const examRows = await fetchTab("Exams");
-    const exams: Exam[] = [];
-    if (examRows && examRows.length > 0) {
-      for (const row of examRows) {
-        if (row[0]) {
-          const idStr = row[0].toString().trim();
-          // Skip header row if returned
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) {
-            continue;
-          }
-          let questions = [];
-          try {
-            questions = JSON.parse(row[4]?.toString() || "[]");
-          } catch (e) {
-            console.error("Failed to parse questions JSON:", row[4]);
-          }
-          exams.push({
-            id: idStr,
-            title: row[1]?.toString() || "",
-            courseCode: row[2]?.toString() || "",
-            description: row[3]?.toString() || "",
-            questions: questions,
-            timeLimitMinutes: parseInt(row[5]?.toString() || "60", 10),
-            isActive: row[6]?.toString().toUpperCase() === "TRUE",
-          });
-        }
-      }
-    }
-
-    // 3. Fetch Settings
-    const settingRows = await fetchTab("Settings");
-    const settings: Partial<SystemSettings> = {};
-    if (settingRows && settingRows.length > 0) {
-      for (const row of settingRows) {
-        if (row[0]) {
-          const key = row[0].toString().trim();
-          const val = row[1]?.toString() || "";
-          if (key === "teacherName") settings.teacherName = val;
-          if (key === "teacherEmail") settings.teacherEmail = val;
-          if (key === "role") settings.role = val;
-          if (key === "lockdown") settings.lockdown = val.toUpperCase() === "TRUE";
-          if (key === "ipWhitelist") settings.ipWhitelist = val.toUpperCase() === "TRUE";
-          if (key === "aiProctor") settings.aiProctor = val.toUpperCase() === "TRUE";
-          if (key === "plagiarismCheck") settings.plagiarismCheck = val.toUpperCase() === "TRUE";
-          if (key === "timezone") settings.timezone = val;
-          if (key === "startDuration") settings.startDuration = parseInt(val || "120", 10);
-        }
-      }
-    }
-
-    return { students, exams, settings };
-  } catch (error) {
-    console.error("Error in fetchPublicSheetsData:", error);
-    return null;
   }
-}
 
+  // 2. Parse Exams
+  const exams: Exam[] = [];
+  if (examRows && examRows.length > 0) {
+    for (const row of examRows) {
+      if (row[0]) {
+        const idStr = row[0].toString().trim();
+        if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) {
+          continue;
+        }
+        let questions = [];
+        try {
+          questions = JSON.parse(row[4]?.toString() || "[]");
+        } catch (e) {
+          console.error("Failed to parse questions JSON:", row[4]);
+        }
+        exams.push({
+          id: idStr,
+          title: row[1]?.toString() || "",
+          courseCode: row[2]?.toString() || "",
+          description: row[3]?.toString() || "",
+          questions: questions,
+          timeLimitMinutes: parseInt(row[5]?.toString() || "60", 10),
+          isActive: row[6]?.toString().toUpperCase() === "TRUE",
+        });
+      }
+    }
+  }
+
+  // 3. Parse Settings
+  const settings: Partial<SystemSettings> = {};
+  if (settingRows && settingRows.length > 0) {
+    for (const row of settingRows) {
+      if (row[0]) {
+        const key = row[0].toString().trim();
+        const val = row[1]?.toString() || "";
+        if (key === "teacherName") settings.teacherName = val;
+        if (key === "teacherEmail") settings.teacherEmail = val;
+        if (key === "role") settings.role = val;
+        if (key === "lockdown") settings.lockdown = val.toUpperCase() === "TRUE";
+        if (key === "ipWhitelist") settings.ipWhitelist = val.toUpperCase() === "TRUE";
+        if (key === "aiProctor") settings.aiProctor = val.toUpperCase() === "TRUE";
+        if (key === "plagiarismCheck") settings.plagiarismCheck = val.toUpperCase() === "TRUE";
+        if (key === "timezone") settings.timezone = val;
+        if (key === "startDuration") settings.startDuration = parseInt(val || "120", 10);
+      }
+    }
+  }
+
+  return { students, exams, settings };
+}
