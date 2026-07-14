@@ -179,7 +179,7 @@ export default function StudentScoreLookup({
                           } else {
                             totalChoiceCount++;
                             totalChoicePoints += q.points;
-                            if (studentAns !== undefined && studentAns === q.answerIndex) {
+                            if (studentAns !== undefined && Number(studentAns) === Number(q.answerIndex)) {
                               earnedChoicePoints += q.points;
                             }
                           }

@@ -85,8 +85,8 @@ export default function TeacherGrading({
         } else {
           // Multiple choice
           const ans = currentAnswers[q.id];
-          if (ans !== undefined && typeof ans === "number") {
-            if (ans === q.answerIndex) {
+          if (ans !== undefined) {
+            if (Number(ans) === Number(q.answerIndex)) {
               newScore += q.points;
             }
           }
@@ -389,14 +389,14 @@ export default function TeacherGrading({
                                                 <span className="leading-tight">คำตอบที่ถูกต้อง: <b>ตัวเลือก {["A", "B", "C", "D", "E"][q.answerIndex]}</b> ({q.options[q.answerIndex]})</span>
                                               </div>
                                               <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                                                studentAns === q.answerIndex
+                                                studentAns !== undefined && Number(studentAns) === Number(q.answerIndex)
                                                   ? "bg-[#eaf5ea] text-[#2b6a2b]"
                                                   : studentAns === undefined
                                                   ? "bg-gray-100 text-gray-500"
                                                   : "bg-[#fff0ef] text-[#ba1a1a]"
                                               }`}>
                                                 <span className="material-symbols-outlined text-[16px] shrink-0">
-                                                  {studentAns === q.answerIndex ? "check" : studentAns === undefined ? "help" : "close"}
+                                                  {studentAns !== undefined && Number(studentAns) === Number(q.answerIndex) ? "check" : studentAns === undefined ? "help" : "close"}
                                                 </span>
                                                 <span className="leading-tight">
                                                   คำตอบของนักเรียน: {studentAns !== undefined ? <span><b>ตัวเลือก {["A", "B", "C", "D", "E"][studentAns]}</b> ({q.options[studentAns]})</span> : <span className="italic text-gray-400">ไม่ได้ระบุคำตอบ</span>}

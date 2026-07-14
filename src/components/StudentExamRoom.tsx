@@ -11,6 +11,26 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
+const mapShuffledAnswersToOriginal = (exam: Exam, shuffledAnswers: Record<string, any>): Record<string, any> => {
+  const originalAnswers: Record<string, any> = {};
+  exam.questions.forEach((q) => {
+    const ans = shuffledAnswers[q.id];
+    if (q.type === "subjective") {
+      originalAnswers[q.id] = ans;
+    } else {
+      if (ans !== undefined) {
+        const mapping = (q as any).originalIndexMapping;
+        if (mapping && mapping[ans] !== undefined) {
+          originalAnswers[q.id] = mapping[ans];
+        } else {
+          originalAnswers[q.id] = ans;
+        }
+      }
+    }
+  });
+  return originalAnswers;
+};
+
 interface StudentExamRoomProps {
   student: Student;
   activeExams: Exam[];
@@ -83,6 +103,7 @@ export default function StudentExamRoom({
         );
 
         const currentAnswers = answersRef.current;
+        const originalAnswers = mapShuffledAnswersToOriginal(exam, currentAnswers);
         let totalPoints = 0;
         let actualAnsweredCount = 0;
 
@@ -114,7 +135,7 @@ export default function StudentExamRoom({
           totalQuestions: exam.questions.length,
           submittedAt: new Date().toISOString(),
           status: "ทุจริต",
-          answers: currentAnswers,
+          answers: originalAnswers,
         };
 
         setIsExamStarted(false);
@@ -200,14 +221,17 @@ export default function StudentExamRoom({
         const mappedOptions = q.options.map((opt, idx) => ({
           text: opt,
           isCorrect: idx === q.answerIndex,
+          originalIndex: idx,
         }));
         const shuffledOptions = shuffleArray(mappedOptions);
         const newAnswerIndex = shuffledOptions.findIndex(opt => opt.isCorrect);
+        const originalIndexMapping = shuffledOptions.map(opt => opt.originalIndex);
 
         return {
           ...q,
           options: shuffledOptions.map(opt => opt.text),
           answerIndex: newAnswerIndex,
+          originalIndexMapping: originalIndexMapping,
         };
       }
       return q;
@@ -238,6 +262,7 @@ export default function StudentExamRoom({
     if (!exam) return;
 
     const currentAnswers = answersRef.current;
+    const originalAnswers = mapShuffledAnswersToOriginal(exam, currentAnswers);
     let totalPoints = 0;
     let autoScore = 0;
     let actualAnsweredCount = 0;
@@ -252,7 +277,7 @@ export default function StudentExamRoom({
       } else {
         if (ans !== undefined) {
           actualAnsweredCount++;
-          if (ans === q.answerIndex) {
+          if (Number(ans) === Number(q.answerIndex)) {
             autoScore += q.points;
           }
         }
@@ -272,7 +297,7 @@ export default function StudentExamRoom({
       totalQuestions: exam.questions.length,
       submittedAt: new Date().toISOString(),
       status: "สมบูรณ์",
-      answers: currentAnswers,
+      answers: originalAnswers,
     };
 
     setIsExamStarted(false);
