@@ -371,7 +371,7 @@ export async function fetchFromSheets(
   }
 }
 
-// Fetch public sheets data (without OAuth token) - FIXED TARGET TAB FOR PUBLISHED CSV
+// Fetch public sheets data (without OAuth token) - FIXES DUAL MODE SEPARATION BUG
 export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
   students: Student[];
   exams: Exam[];
@@ -383,7 +383,7 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
     try {
       let url = "";
       if (isPublishedToken) {
-        // Mode A: ลิงก์ระบบองค์กรโรงเรียนที่กดเผยแพร่เว็บ -> ดึงแบบ CSV โดยระบุตัวแปรแผ่นงาน (&sheet=...) อย่างถูกต้องแม่นยำ
+        // Mode A Fix: เปลี่ยนไปดึงข้อมูลผ่านพารามิเตอร์ตารางแบบเจาะจงแท็บเพื่อไม่ให้ Google คืนค่าหน้าแรกซ้ำซ้อน
         url = `https://docs.google.com/spreadsheets/d/e/${spreadsheetId}/pub?output=csv&sheet=${encodeURIComponent(sheetName)}`;
       } else {
         // Mode B: ลิงก์ตารางปกติ -> ดึงแบบ JSON Gviz
@@ -444,7 +444,8 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
       for (const row of examRows) {
         if (row[0]) {
           const idStr = row[0].toString().trim();
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) {
+          // ป้องกันตัวเช็คหลุด: ตรวจสอบว่านี่เป็นแถวหัวตาราง (Header) หรือแถวว่าง หรือไม่
+          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส") || idStr === "" || idStr.includes("ชื่อ-นามสกุล")) {
             continue;
           }
           let questions = [];
