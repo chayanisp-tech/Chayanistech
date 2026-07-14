@@ -266,20 +266,8 @@ const executeSubmitExam = async () => {
     setIsSubmitting(true);
 
     try {
-      const currentAnswers = answersRef.current;
-      const processedAnswers = { ...currentAnswers };
-
-      // 1. ตรวจสอบและอัปโหลดภาพวาดขึ้น Firebase Storage (ถ้ามีข้อสอบวาดเขียน)
-      for (const q of exam.questions) {
-        if (q.type === "subjective" && processedAnswers[q.id]?.drawing) {
-          const drawingStr = processedAnswers[q.id].drawing;
-          if (drawingStr.startsWith("data:image")) {
-            // อัปโหลดขึ้น Storage ผ่านฟังก์ชันใน lib/firebase.ts
-            const downloadUrl = await uploadDrawingToStorage(drawingStr, student.id, q.id);
-            processedAnswers[q.id].drawing = downloadUrl; // เปลี่ยนรหัสรูปภาพเป็น URL คลาวด์
-          }
-        }
-      }
+    const currentAnswers = answersRef.current;
+    const processedAnswers = { ...currentAnswers };
 
       // 2. Mapping คำตอบกลับไปยังโครงสร้างต้นฉบับ
       const originalAnswers = mapShuffledAnswersToOriginal(exam, processedAnswers);
