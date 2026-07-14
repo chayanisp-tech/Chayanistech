@@ -41,16 +41,26 @@ type Screen =
   | "teacher_dashboard";
 
 // -------------------------------------------------------------
-// 1. ใส่รหัส Google Sheets ID ของคุณครูที่นี่ (ก๊อปปี้จาก URL)
-const MY_MASTER_SHEET_ID = "1mmK7TYBhRRnsmOzwauGkbOySs6tcP0tDnzZROzYuRUc";
+// 1. ใส่รหัส Google Sheets ID หรือ ลิงก์เผยแพร่เว็บ (2PACX-...) ของคุณครูที่นี่
+// -------------------------------------------------------------
+const MY_MASTER_SHEET_ID = "2PACX-1vSzmn3y4fHvfUMB7S3owYx4SkNG4kcYoBlwSzNv0yCD0a6dvcFhMk4VsKItz25GWvHcOzJ4HN9oM1Tt";
 
-// ฟังก์ชันแกะรหัส ID จาก URL ของ Google Sheets ทั้งแบบสั้นและแบบยาว
+// 🛠️ แก้ไขฟังก์ชันให้รองรับการแกะ ID จาก URL ทั่วไป และ ลิงก์เผยแพร่องค์กร (/d/e/) อย่างถูกต้อง ไม่หลุดเป็นคำว่า "e"
 const extractSpreadsheetId = (urlOrId: string | null): string | null => {
   if (!urlOrId) return null;
+  
+  // เช็คแพทเทิร์น /d/e/ ก่อน (สำหรับลิงก์เผยแพร่เว็บ)
+  const eMatches = urlOrId.match(/\/d\/e\/([a-zA-Z0-9-_]+)/);
+  if (eMatches && eMatches[1]) {
+    return eMatches[1];
+  }
+  
+  // เช็คแพทเทิร์น /d/ ปกติ
   const matches = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/);
   if (matches && matches[1]) {
     return matches[1];
   }
+  
   return urlOrId.trim();
 };
 
@@ -116,62 +126,23 @@ export default function App() {
     };
   }, [currentScreen]);
 
- const loadPublicData = async (sheetId: string) => {
+  // 🛠️ ปรับปรุงฟังก์ชันโหลดข้อมูลให้เรียกผ่าน Dual-Mode Parser จาก googleSheets.ts โดยตรง ไม่ทำงานซ้อนกัน
+  const loadPublicData = async (sheetId: string) => {
     const cleanSheetId = extractSpreadsheetId(sheetId);
     if (!cleanSheetId) return false;
 
     setIsLoadingPublicData(true);
     setPublicDataError(null);
     try {
-      // ดึงข้อมูลผ่าน Public API
+      // เรียกใช้ฟังก์ชันหลักที่เราอัปเดตระบบ CSV ทะลุกำแพงไว้แล้ว
       const fetched = await fetchPublicSheetsData(cleanSheetId);
-      let finalStudents = fetched?.students || [];
       
-      // ดึงสำรองผ่านช่องทาง CSV หากต้องการความยืดหยุ่นสูงขึ้น
-      try {
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${cleanSheetId}/export?format=csv&sheet=Students`;
-        const res = await fetch(csvUrl);
-        const csvText = await res.text();
-        
-        if (csvText.trim().startsWith("<!DOCTYPE html") || csvText.includes("google.com/accounts")) {
-          throw new Error("ORGANIZATION_RESTRICTED");
-        }
-
-        const rows = csvText.split('\n');
-        const parsedStudents = [];
-        
-        for (let i = 1; i < rows.length; i++) {
-          const line = rows[i].trim();
-          if (!line) continue;
-          
-          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-          
-          if (cols.length >= 2 && cols[0] !== '') {
-            parsedStudents.push({
-              id: cols[0],
-              name: cols[1],
-              className: cols[2] || "",
-              department: cols[2] || ""
-            });
-          }
-        }
-        
-        if (parsedStudents.length > 0) {
-          finalStudents = parsedStudents;
-        }
-      } catch (e: any) {
-        if (e.message === "ORGANIZATION_RESTRICTED") {
-          throw e; // โยนไปหา catch ใหญ่เพื่อแจ้งเรื่องสิทธิ์โรงเรียน
-        }
-        console.warn("Failed to fetch direct CSV fallback:", e);
-      }
-
       if (fetched) {
-        if (finalStudents.length > 0) {
-          setStudents(finalStudents);
-          localStorage.setItem("exam_students", JSON.stringify(finalStudents));
+        if (fetched.students && fetched.students.length > 0) {
+          setStudents(fetched.students);
+          localStorage.setItem("exam_students", JSON.stringify(fetched.students));
         }
-        if (fetched.exams.length > 0) {
+        if (fetched.exams && fetched.exams.length > 0) {
           setExams(fetched.exams);
           localStorage.setItem("exam_exams", JSON.stringify(fetched.exams));
         }
@@ -181,9 +152,12 @@ export default function App() {
           localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
         }
         
+        const isPublishedToken = cleanSheetId.startsWith("2PACX-");
         const updatedSync: SyncStatus = {
           spreadsheetId: cleanSheetId,
-          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
+          spreadsheetUrl: isPublishedToken 
+            ? `https://docs.google.com/spreadsheets/d/e/${cleanSheetId}/pubhtml`
+            : `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
           lastSyncedAt: new Date().toISOString(),
           isSyncing: false,
           error: null,
@@ -192,14 +166,13 @@ export default function App() {
         localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
         setActiveSheetId(cleanSheetId);
 
-        alert(`📢 เชื่อมต่อ Google Sheets สำเร็จ!\n• ดึงรายชื่อนักเรียนได้ทั้งหมด: ${finalStudents.length} คน\n• ดึงข้อสอบได้ทั้งหมด: ${fetched.exams.length} ชุด`);
+        alert(`📢 เชื่อมต่อ Google Sheets สำเร็จ!\n• ดึงรายชื่อนักเรียนได้ทั้งหมด: ${fetched.students?.length || 0} คน\n• ดึงข้อสอบได้ทั้งหมด: ${fetched.exams?.length || 0} ชุด`);
         return true;
       }
       return false;
     } catch (err: any) {
       console.error("Public fetch failed:", err);
       
-      // ดักจับกรณีหน้าล็อกอินถูกบล็อกโดย CORS หรือโดนบล็อกจากการดึงข้อมูลโดยตรง
       const isFailedToFetch = err instanceof TypeError || err.message?.includes("Failed to fetch") || err.message?.includes("fetch");
       
       if (err.message === "ORGANIZATION_RESTRICTED" || isFailedToFetch) {
@@ -245,9 +218,6 @@ export default function App() {
     localStorage.setItem("exam_sync_status", JSON.stringify(clearedSync));
   };
 
-  // -------------------------------------------------------------
-  // 🛠️ 2. แก้ไข useEffect นี้: ให้บังคับโหลดข้อมูลจาก MY_MASTER_SHEET_ID ทันที
-  // -------------------------------------------------------------
   useEffect(() => {
     const localStudents = localStorage.getItem("exam_students");
     const localExams = localStorage.getItem("exam_exams");
@@ -274,7 +244,7 @@ export default function App() {
     }
 
     // บังคับเซฟและดึงข้อมูลจาก Master Sheet ทันทีที่เปิดเว็บ
-    if (MY_MASTER_SHEET_ID && MY_MASTER_SHEET_ID !== "ใส่_รหัส_Sheet_ID_ของคุณครูไว้ที่นี่") {
+    if (MY_MASTER_SHEET_ID && MY_MASTER_SHEET_ID !== "") {
       localStorage.setItem("student_active_sheet_id", MY_MASTER_SHEET_ID);
       loadPublicData(MY_MASTER_SHEET_ID);
     }
@@ -345,7 +315,7 @@ export default function App() {
     const targetSheetId = syncStatus.spreadsheetId || activeSheetId;
     const token = getAccessToken();
 
-    if (token && targetSheetId) {
+    if (token && targetSheetId && !targetSheetId.startsWith("2PACX-")) {
       try {
         const fetched = await fetchFromSheets(token, targetSheetId);
         let studentsToSync = updatedStudents !== undefined ? updatedStudents : (fetched?.students || JSON.parse(localStorage.getItem("exam_students") || "[]"));
@@ -388,7 +358,10 @@ export default function App() {
       let sheetId = syncStatus.spreadsheetId;
       let sheetUrl = syncStatus.spreadsheetUrl;
 
-      if (!sheetId) sheetId = await searchDatabaseSpreadsheet(token);
+      if (!sheetId || sheetId.startsWith("2PACX-")) {
+        sheetId = await searchDatabaseSpreadsheet(token);
+      }
+      
       if (!sheetId) {
         const createResult = await createDatabaseSpreadsheet(token);
         sheetId = createResult.spreadsheetId;
