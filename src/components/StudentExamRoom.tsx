@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
-
+import { collection, addDoc } from "firebase/firestore";
+import { db, uploadDrawingToStorage } from "../lib/firebase";
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -50,6 +51,7 @@ export default function StudentExamRoom({
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExamStarted, setIsExamStarted] = useState(false);
 
   // ตรวจสอบสถานะการเปิดหน้าจอด้านการตรวจทานคำตอบก่อนส่งจริง
@@ -257,55 +259,84 @@ export default function StudentExamRoom({
     setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
   };
 
-  const executeSubmitExam = () => {
+const executeSubmitExam = async () => {
     const exam = selectedExamRef.current;
-    if (!exam) return;
+    if (!exam || isSubmitting) return;
 
-    const currentAnswers = answersRef.current;
-    const originalAnswers = mapShuffledAnswersToOriginal(exam, currentAnswers);
-    let totalPoints = 0;
-    let autoScore = 0;
-    let actualAnsweredCount = 0;
+    setIsSubmitting(true);
 
-    exam.questions.forEach((q) => {
-      totalPoints += q.points;
-      const ans = currentAnswers[q.id];
-      if (q.type === "subjective") {
-        if (ans && (ans.text?.trim() || ans.drawing)) {
-          actualAnsweredCount++;
-        }
-      } else {
-        if (ans !== undefined) {
-          actualAnsweredCount++;
-          if (Number(ans) === Number(q.answerIndex)) {
-            autoScore += q.points;
+    try {
+      const currentAnswers = answersRef.current;
+      const processedAnswers = { ...currentAnswers };
+
+      // 1. ตรวจสอบและอัปโหลดภาพวาดขึ้น Firebase Storage (ถ้ามีข้อสอบวาดเขียน)
+      for (const q of exam.questions) {
+        if (q.type === "subjective" && processedAnswers[q.id]?.drawing) {
+          const drawingStr = processedAnswers[q.id].drawing;
+          if (drawingStr.startsWith("data:image")) {
+            // อัปโหลดขึ้น Storage ผ่านฟังก์ชันใน lib/firebase.ts
+            const downloadUrl = await uploadDrawingToStorage(drawingStr, student.id, q.id);
+            processedAnswers[q.id].drawing = downloadUrl; // เปลี่ยนรหัสรูปภาพเป็น URL คลาวด์
           }
         }
       }
-    });
 
-    const newSubmission: Submission = {
-      submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
-      studentId: student.id,
-      studentName: student.name,
-      studentClassName: student.className,
-      examId: exam.id,
-      examTitle: exam.title,
-      score: autoScore,
-      totalPoints: totalPoints,
-      answeredCount: actualAnsweredCount,
-      totalQuestions: exam.questions.length,
-      submittedAt: new Date().toISOString(),
-      status: "สมบูรณ์",
-      answers: originalAnswers,
-    };
+      // 2. Mapping คำตอบกลับไปยังโครงสร้างต้นฉบับ
+      const originalAnswers = mapShuffledAnswersToOriginal(exam, processedAnswers);
+      let totalPoints = 0;
+      let autoScore = 0;
+      let actualAnsweredCount = 0;
 
-    setIsExamStarted(false);
-    setSelectedExam(null);
-    setCheatCount(0);
-    setShowReviewModal(false);
-    setConfirmSubmitChecked(false);
-    onExamSubmitted(newSubmission);
+      exam.questions.forEach((q) => {
+        totalPoints += q.points;
+        const ans = processedAnswers[q.id];
+        if (q.type === "subjective") {
+          if (ans && (ans.text?.trim() || ans.drawing)) {
+            actualAnsweredCount++;
+          }
+        } else {
+          if (ans !== undefined) {
+            actualAnsweredCount++;
+            if (Number(ans) === Number(q.answerIndex)) {
+              autoScore += q.points;
+            }
+          }
+        }
+      });
+
+      const newSubmission: Submission = {
+        submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
+        studentId: student.id,
+        studentName: student.name,
+        studentClassName: student.className,
+        examId: exam.id,
+        examTitle: exam.title,
+        score: autoScore,
+        totalPoints: totalPoints,
+        answeredCount: actualAnsweredCount,
+        totalQuestions: exam.questions.length,
+        submittedAt: new Date().toISOString(),
+        status: "สมบูรณ์",
+        answers: originalAnswers,
+      };
+
+      // 3. ยิงข้อมูลผลสอบลงฐานข้อมูล Firebase Firestore
+      await addDoc(collection(db, "submissions"), newSubmission);
+
+      // 4. ล้างหน้าจอและแจ้งเตือนตามระบบเดิมของคุณ
+      setIsExamStarted(false);
+      setSelectedExam(null);
+      setCheatCount(0);
+      setShowReviewModal(false);
+      setConfirmSubmitChecked(false);
+      onExamSubmitted(newSubmission);
+      
+    } catch (error) {
+      console.error("เกิดข้อผิดพลาดในการส่งข้อสอบลง Firebase:", error);
+      alert("ไม่สามารถส่งข้อสอบได้ในขณะนี้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmitExam = (isTimeUp = false) => {
