@@ -124,10 +124,45 @@ export default function App() {
     setPublicDataError(null);
     try {
       const fetched = await fetchPublicSheetsData(cleanSheetId);
+      
+      // -------------------------------------------------------------------------
+      // 🛠️ PATCH: บังคับอ่านข้อมูลรายชื่อนักเรียนโดยตรง ไม่สนใจว่าหัวตารางจะชื่ออะไร
+      // -------------------------------------------------------------------------
+      let finalStudents = fetched?.students || [];
+      try {
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${cleanSheetId}/gviz/tq?tqx=out:csv&sheet=Students`;
+        const res = await fetch(csvUrl);
+        const csvText = await res.text();
+        
+        // แยกบรรทัดและลบเครื่องหมายคำพูด (Quotes) ที่ติดมา
+        const rows = csvText.split('\n').map(r => r.replace(/(^"|"$)/g, '').split('","')); 
+        
+        const parsedStudents = [];
+        for (let i = 1; i < rows.length; i++) { // ข้ามแถวที่ 1 (หัวตาราง) ไปเลย
+          const cols = rows[i].map(c => c.replace(/"/g, ''));
+          if (cols.length >= 2 && cols[0].trim() !== '') {
+            parsedStudents.push({
+              id: cols[0].trim(),
+              name: cols[1].trim(),
+              department: cols[2] ? cols[2].trim() : ""
+            });
+          }
+        }
+        
+        // ถ้าดึงรายชื่อได้สำเร็จ ให้ใช้ข้อมูลนี้แทนเลย
+        if (parsedStudents.length > 0) {
+           finalStudents = parsedStudents;
+        }
+      } catch (e) {
+        console.error("Failed to fetch direct CSV:", e);
+      }
+      // -------------------------------------------------------------------------
+
       if (fetched) {
-        if (fetched.students.length > 0) {
-          setStudents(fetched.students);
-          localStorage.setItem("exam_students", JSON.stringify(fetched.students));
+        // อัปเดตรายชื่อนักเรียนจาก Patch ของเรา
+        if (finalStudents.length > 0) {
+          setStudents(finalStudents);
+          localStorage.setItem("exam_students", JSON.stringify(finalStudents));
         }
         if (fetched.exams.length > 0) {
           setExams(fetched.exams);
@@ -145,6 +180,22 @@ export default function App() {
           isSyncing: false,
           error: null,
         };
+        setSyncStatus(updatedSync);
+        localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
+        setActiveSheetId(cleanSheetId);
+        return true;
+      } else {
+        setPublicDataError("ไม่สามารถโหลดข้อสอบได้ กรุณาแชร์สิทธิ์เป็นทุกคนที่มีลิงก์มีสิทธิ์อ่าน");
+        return false;
+      }
+    } catch (err) {
+      console.error("Public fetch failed:", err);
+      setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด");
+      return false;
+    } finally {
+      setIsLoadingPublicData(false);
+    }
+  };
         setSyncStatus(updatedSync);
         localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
         setActiveSheetId(cleanSheetId);
