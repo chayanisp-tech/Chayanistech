@@ -116,32 +116,34 @@ export default function App() {
     };
   }, [currentScreen]);
 
-  const loadPublicData = async (sheetId: string) => {
+ const loadPublicData = async (sheetId: string) => {
     const cleanSheetId = extractSpreadsheetId(sheetId);
     if (!cleanSheetId) return false;
 
     setIsLoadingPublicData(true);
     setPublicDataError(null);
     try {
+      // ดึงข้อมูลผ่าน Public API
       const fetched = await fetchPublicSheetsData(cleanSheetId);
-      
-      // -------------------------------------------------------------------------
-      // 🛠️ PATCH พิเศษขั้นเทพ: ตัวแยก CSV แบบยืดหยุ่นสูง รองรับทุกรูปแบบข้อมูล
-      // -------------------------------------------------------------------------
       let finalStudents = fetched?.students || [];
+      
+      // ดึงสำรองผ่านช่องทาง CSV หากต้องการความยืดหยุ่นสูงขึ้น
       try {
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${cleanSheetId}/gviz/tq?tqx=out:csv&sheet=Students`;
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${cleanSheetId}/export?format=csv&sheet=Students`;
         const res = await fetch(csvUrl);
         const csvText = await res.text();
         
+        if (csvText.trim().startsWith("<!DOCTYPE html") || csvText.includes("google.com/accounts")) {
+          throw new Error("ORGANIZATION_RESTRICTED");
+        }
+
         const rows = csvText.split('\n');
         const parsedStudents = [];
         
-        for (let i = 1; i < rows.length; i++) { // ข้ามหัวตาราง
+        for (let i = 1; i < rows.length; i++) {
           const line = rows[i].trim();
           if (!line) continue;
           
-          // ใช้ Regex แยกด้วยเครื่องหมายจุลภาค (,) ที่อยู่นอกเครื่องหมายคำพูดอย่างปลอดภัย
           const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
           
           if (cols.length >= 2 && cols[0] !== '') {
@@ -155,12 +157,14 @@ export default function App() {
         }
         
         if (parsedStudents.length > 0) {
-           finalStudents = parsedStudents;
+          finalStudents = parsedStudents;
         }
-      } catch (e) {
-        console.error("Failed to fetch direct CSV:", e);
+      } catch (e: any) {
+        if (e.message === "ORGANIZATION_RESTRICTED") {
+          throw e; // โยนไปหา catch ใหญ่เพื่อแจ้งเรื่องสิทธิ์โรงเรียน
+        }
+        console.warn("Failed to fetch direct CSV fallback:", e);
       }
-      // -------------------------------------------------------------------------
 
       if (fetched) {
         if (finalStudents.length > 0) {
@@ -176,6 +180,7 @@ export default function App() {
           setSettings(mergedSettings);
           localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
         }
+        
         const updatedSync: SyncStatus = {
           spreadsheetId: cleanSheetId,
           spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
@@ -187,17 +192,32 @@ export default function App() {
         localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
         setActiveSheetId(cleanSheetId);
 
-        // 📢 กล่องแจ้งสถานะแบบเรียลไทม์เพื่อให้คุณครูอุ่นใจ
         alert(`📢 เชื่อมต่อ Google Sheets สำเร็จ!\n• ดึงรายชื่อนักเรียนได้ทั้งหมด: ${finalStudents.length} คน\n• ดึงข้อสอบได้ทั้งหมด: ${fetched.exams.length} ชุด`);
-
         return true;
-      } else {
-        setPublicDataError("ไม่สามารถโหลดข้อสอบได้ กรุณาแชร์สิทธิ์เป็นทุกคนที่มีลิงก์มีสิทธิ์อ่าน");
-        return false;
       }
-    } catch (err) {
+      return false;
+    } catch (err: any) {
       console.error("Public fetch failed:", err);
-      setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด");
+      
+      // ดักจับกรณีหน้าล็อกอินถูกบล็อกโดย CORS หรือโดนบล็อกจากการดึงข้อมูลโดยตรง
+      const isFailedToFetch = err instanceof TypeError || err.message?.includes("Failed to fetch") || err.message?.includes("fetch");
+      
+      if (err.message === "ORGANIZATION_RESTRICTED" || isFailedToFetch) {
+        const errorMsg = "❌ บัญชีโรงเรียนบล็อกการเข้าถึงแบบสาธารณะ";
+        setPublicDataError(errorMsg);
+        
+        alert(
+          "⚠️ ตรวจพบข้อจำกัดความปลอดภัยของโรงเรียน! (Google Workspace Restriction)\n\n" +
+          "เนื่องจากชีตนี้อยู่ภายใต้บัญชีโรงเรียน แม้คุณครูจะเปิดแชร์แล้ว แต่ระบบ Google จะบังคับให้เข้าสู่ระบบและบล็อกการดึงข้อมูลในโหมดไม่ระบุตัวตน (Incognito)\n\n" +
+          "💡 วิธีการแก้ไขให้ผ่านทันที:\n" +
+          "1. เปิดหน้า Google Sheets ของคุณครูขึ้นมา\n" +
+          "2. ไปที่เมนู [ไฟล์] (File) > [แชร์] (Share) > [เผยแพร่ไปยังเว็บ] (Publish to the web)\n" +
+          "3. คลิกปุ่ม [เผยแพร่] (Publish) และกดตกลง\n" +
+          "4. ลองเปิดหน้าระบบสอบนี้ใหม่อีกครั้ง ระบบจะผ่านและสามารถดึงรายชื่อกับข้อสอบได้สำเร็จ 100% ครับ!"
+        );
+      } else {
+        setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด กรุณาตรวจสอบลิงก์ของท่าน");
+      }
       return false;
     } finally {
       setIsLoadingPublicData(false);
