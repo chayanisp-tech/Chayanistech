@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
 import { collection, addDoc } from "firebase/firestore";
-import { db, uploadDrawingToStorage } from "../lib/firebase";
+import { db } from "../lib/firebase";
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -683,7 +683,12 @@ const executeSubmitExam = async () => {
                       />
                     )}
                     {currentQuestion.subjectiveMode === "canvas" && (
-                      <DrawingCanvas value={answers[currentQuestion.id]?.drawing || ""} onChange={(dataUrl) => handleSubjectiveDrawingChange(currentQuestion.id, dataUrl)} />
+                    <DrawingCanvas 
+  value={answers[currentQuestion.id]?.drawing || ""} 
+  onChange={(url) => handleSubjectiveDrawingChange(currentQuestion.id, url)}
+  studentId={student.id} 
+  questionId={currentQuestion.id}
+/>
                     )}
                   </div>
                 ) : (
