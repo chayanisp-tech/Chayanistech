@@ -218,63 +218,74 @@ export default function App() {
     localStorage.setItem("exam_sync_status", JSON.stringify(clearedSync));
   };
 
+ // ⚡ ระบบเปิดตัวแอปพลิเคชัน: ดึงข้อมูลด่วนจากคลาวด์ Firebase Firestore แทน Google Sheets
   useEffect(() => {
-    const localStudents = localStorage.getItem("exam_students");
-    const localExams = localStorage.getItem("exam_exams");
-    const localSubmissions = localStorage.getItem("exam_submissions");
-    const localSettings = localStorage.getItem("exam_settings");
-    const localSync = localStorage.getItem("exam_sync_status");
+    testConnection(); // ทดสอบการเชื่อมต่อฐานข้อมูลเบื้องต้น
 
-    if (localStudents) setStudents(JSON.parse(localStudents));
-    else setStudents(DEFAULT_STUDENTS);
+    const initializeApp = async () => {
+      setIsLoadingPublicData(true);
+      setPublicDataError(null);
+      
+      // 1. ดึงข้อมูลจากความจำเครื่อง (LocalStorage) ขึ้นมาแสดงผลก่อนทันที เพื่อไม่ให้นักเรียนต้องรอนาน
+      const localStudents = localStorage.getItem("exam_students");
+      const localExams = localStorage.getItem("exam_exams");
+      const localSubmissions = localStorage.getItem("exam_submissions");
+      const localSettings = localStorage.getItem("exam_settings");
+      const localSync = localStorage.getItem("exam_sync_status");
 
-    if (localExams) setExams(JSON.parse(localExams));
-    else setExams(DEFAULT_EXAMS);
+      if (localStudents) setStudents(JSON.parse(localStudents));
+      else setStudents(DEFAULT_STUDENTS);
 
-    if (localSubmissions) setSubmissions(JSON.parse(localSubmissions));
-    else setSubmissions(DEFAULT_SUBMISSIONS);
+      if (localExams) setExams(JSON.parse(localExams));
+      else setExams(DEFAULT_EXAMS);
 
-    if (localSettings) setSettings(JSON.parse(localSettings));
-    else setSettings(DEFAULT_SETTINGS);
+      if (localSubmissions) setSubmissions(JSON.parse(localSubmissions));
+      else setSubmissions(DEFAULT_SUBMISSIONS);
 
-    if (localSync) {
-      const parsedSync = JSON.parse(localSync);
-      setSyncStatus(parsedSync);
-      if (parsedSync.spreadsheetId) setActiveSheetId(parsedSync.spreadsheetId);
-    }
+      if (localSettings) setSettings(JSON.parse(localSettings));
+      else setSettings(DEFAULT_SETTINGS);
 
-    // บังคับเซฟและดึงข้อมูลจาก Master Sheet ทันทีที่เปิดเว็บ
-    if (MY_MASTER_SHEET_ID && MY_MASTER_SHEET_ID !== "") {
-      localStorage.setItem("student_active_sheet_id", MY_MASTER_SHEET_ID);
-      loadPublicData(MY_MASTER_SHEET_ID);
-    }
-  }, []);
+      if (localSync) {
+        const parsedSync = JSON.parse(localSync);
+        setSyncStatus(parsedSync);
+        if (parsedSync.spreadsheetId) setActiveSheetId(parsedSync.spreadsheetId);
+      }
 
-  useEffect(() => {
-    testConnection();
-    const loadFirestoreData = async () => {
+      // 2. ดึงข้อมูลชุดล่าสุดแบบ Real-time จาก Firebase Firestore มาอัปเดตหน้าจอระบบสอบ
       try {
+        console.log("🔥 กำลังอัปเดตรายชื่อและข้อสอบล่าสุดจากระบบคลาวด์ Firebase...");
         const firestoreData = await pullAllFromFirestore();
+        
         if (firestoreData) {
           const { students: fStudents, exams: fExams, submissions: fSubmissions, settings: fSettings } = firestoreData;
-          if (fExams.length > 0) {
-            setExams(fExams);
-            localStorage.setItem("exam_exams", JSON.stringify(fExams));
+          
+          if (fStudents && fStudents.length > 0) {
             setStudents(fStudents);
             localStorage.setItem("exam_students", JSON.stringify(fStudents));
+          }
+          if (fExams && fExams.length > 0) {
+            setExams(fExams);
+            localStorage.setItem("exam_exams", JSON.stringify(fExams));
+          }
+          if (fSubmissions && fSubmissions.length > 0) {
             setSubmissions(fSubmissions);
             localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
-            if (fSettings) {
-              setSettings(fSettings);
-              localStorage.setItem("exam_settings", JSON.stringify(fSettings));
-            }
           }
+          if (fSettings) {
+            setSettings(fSettings);
+            localStorage.setItem("exam_settings", JSON.stringify(fSettings));
+          }
+          console.log("⚡ อัปเดตข้อมูลห้องเรียนผ่าน Firebase สำเร็จ 100%");
         }
       } catch (e) {
-        console.error("Failed to load initial data from Firestore:", e);
+        console.error("Firebase Initialization Failed:", e);
+        setPublicDataError("ไม่สามารถเชื่อมต่อคลาวด์กลางได้ ระบบกำลังใช้ข้อมูลล่าสุดที่มีในเครื่องของนักเรียน");
+      } finally {
+        setIsLoadingPublicData(false);
       }
     };
-    loadFirestoreData();
+
+    initializeApp();
   }, []);
 
   const saveStateToLocal = (
