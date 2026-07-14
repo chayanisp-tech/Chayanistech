@@ -371,7 +371,7 @@ export async function fetchFromSheets(
   }
 }
 
-// Fetch public sheets data (without OAuth token) - FIXES DUAL MODE SEPARATION BUG
+// Fetch public sheets data (without OAuth token) - ADVANCED FILTER BUGFIX
 export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
   students: Student[];
   exams: Exam[];
@@ -383,10 +383,8 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
     try {
       let url = "";
       if (isPublishedToken) {
-        // Mode A Fix: เปลี่ยนไปดึงข้อมูลผ่านพารามิเตอร์ตารางแบบเจาะจงแท็บเพื่อไม่ให้ Google คืนค่าหน้าแรกซ้ำซ้อน
         url = `https://docs.google.com/spreadsheets/d/e/${spreadsheetId}/pub?output=csv&sheet=${encodeURIComponent(sheetName)}`;
       } else {
-        // Mode B: ลิงก์ตารางปกติ -> ดึงแบบ JSON Gviz
         url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
       }
 
@@ -437,23 +435,37 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
       }
     }
 
-    // 2. Parse Exams
+    // 2. Parse Exams (เพิ่มการกรองขั้นเด็ดขาด เพื่อป้องกันแผ่น Students หลุดเข้ามา)
     const examRows = await fetchTab("Exams");
     const exams: Exam[] = [];
     if (examRows && examRows.length > 0) {
       for (const row of examRows) {
         if (row[0]) {
           const idStr = row[0].toString().trim();
-          // ป้องกันตัวเช็คหลุด: ตรวจสอบว่านี่เป็นแถวหัวตาราง (Header) หรือแถวว่าง หรือไม่
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส") || idStr === "" || idStr.includes("ชื่อ-นามสกุล")) {
+          
+          // 🔥 [CHECKPOINT บั๊ก] ถ้าหัวตาราง หรือข้อมูลในแถวนั้น ดันกลายเป็นชื่อนักเรียน/ห้องเรียน (แปลว่า Google sheets พ่นชีตผิดอันมาให้) ให้ข้ามทันที
+          if (
+            idStr.toLowerCase().includes("id") || 
+            idStr.includes("รหัส") || 
+            idStr === "" || 
+            idStr.includes("ชื่อ-นามสกุล") ||
+            (row[2] && row[2].toString().includes("ม.")) || // ข้ามถ้าเป็นเลขชั้นเรียน เช่น ม.3/1
+            (row[1] && row[1].toString().includes("เด็กชาย")) || // ข้ามถ้ามีคำนำหน้าชื่อนักเรียน
+            (row[1] && row[1].toString().includes("เด็กหญิง")) ||
+            (row[1] && row[1].toString().includes("นาย")) ||
+            (row[1] && row[1].toString().includes("นางสาว"))
+          ) {
             continue;
           }
+          
           let questions = [];
           try {
             questions = JSON.parse(row[4]?.toString() || "[]");
           } catch (e) {
-            console.error("Failed to parse questions JSON:", row[4]);
+            // ถ้าแถวนี้ไม่ใช่ข้อสอบจริง (แกะ JSON ไม่ผ่าน) ให้ข้ามไปเลย ไม่นับเป็นข้อสอบ
+            continue;
           }
+          
           exams.push({
             id: idStr,
             title: row[1]?.toString() || "",
@@ -475,6 +487,17 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
         if (row[0]) {
           const key = row[0].toString().trim();
           const val = row[1]?.toString() || "";
+          
+          // ตรวจสอบคีย์ของ Settings เท่านั้น ถ้าเป็นรหัสนักเรียนให้ข้าม
+          if (
+            key.toLowerCase().includes("id") || 
+            key.includes("รหัส") || 
+            key.includes("เด็กชาย") || 
+            key.includes("เด็กหญิง")
+          ) {
+            continue;
+          }
+          
           if (key === "teacherName") settings.teacherName = val;
           if (key === "teacherEmail") settings.teacherEmail = val;
           if (key === "role") settings.role = val;
