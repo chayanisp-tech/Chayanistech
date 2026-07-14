@@ -126,7 +126,7 @@ export default function App() {
       const fetched = await fetchPublicSheetsData(cleanSheetId);
       
       // -------------------------------------------------------------------------
-      // 🛠️ PATCH: บังคับอ่านข้อมูลรายชื่อนักเรียนโดยตรง ไม่สนใจว่าหัวตารางจะชื่ออะไร
+      // 🛠️ PATCH พิเศษขั้นเทพ: ตัวแยก CSV แบบยืดหยุ่นสูง รองรับทุกรูปแบบข้อมูล
       // -------------------------------------------------------------------------
       let finalStudents = fetched?.students || [];
       try {
@@ -134,22 +134,26 @@ export default function App() {
         const res = await fetch(csvUrl);
         const csvText = await res.text();
         
-        // แยกบรรทัดและลบเครื่องหมายคำพูด (Quotes) ที่ติดมา
-        const rows = csvText.split('\n').map(r => r.replace(/(^"|"$)/g, '').split('","')); 
-        
+        const rows = csvText.split('\n');
         const parsedStudents = [];
-        for (let i = 1; i < rows.length; i++) { // ข้ามแถวที่ 1 (หัวตาราง) ไปเลย
-          const cols = rows[i].map(c => c.replace(/"/g, ''));
-          if (cols.length >= 2 && cols[0].trim() !== '') {
+        
+        for (let i = 1; i < rows.length; i++) { // ข้ามหัวตาราง
+          const line = rows[i].trim();
+          if (!line) continue;
+          
+          // ใช้ Regex แยกด้วยเครื่องหมายจุลภาค (,) ที่อยู่นอกเครื่องหมายคำพูดอย่างปลอดภัย
+          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+          
+          if (cols.length >= 2 && cols[0] !== '') {
             parsedStudents.push({
-              id: cols[0].trim(),
-              name: cols[1].trim(),
-              department: cols[2] ? cols[2].trim() : ""
+              id: cols[0],
+              name: cols[1],
+              className: cols[2] || "",
+              department: cols[2] || ""
             });
           }
         }
         
-        // ถ้าดึงรายชื่อได้สำเร็จ ให้ใช้ข้อมูลนี้แทนเลย
         if (parsedStudents.length > 0) {
            finalStudents = parsedStudents;
         }
@@ -159,7 +163,6 @@ export default function App() {
       // -------------------------------------------------------------------------
 
       if (fetched) {
-        // อัปเดตรายชื่อนักเรียนจาก Patch ของเรา
         if (finalStudents.length > 0) {
           setStudents(finalStudents);
           localStorage.setItem("exam_students", JSON.stringify(finalStudents));
@@ -183,6 +186,10 @@ export default function App() {
         setSyncStatus(updatedSync);
         localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
         setActiveSheetId(cleanSheetId);
+
+        // 📢 กล่องแจ้งสถานะแบบเรียลไทม์เพื่อให้คุณครูอุ่นใจ
+        alert(`📢 เชื่อมต่อ Google Sheets สำเร็จ!\n• ดึงรายชื่อนักเรียนได้ทั้งหมด: ${finalStudents.length} คน\n• ดึงข้อสอบได้ทั้งหมด: ${fetched.exams.length} ชุด`);
+
         return true;
       } else {
         setPublicDataError("ไม่สามารถโหลดข้อสอบได้ กรุณาแชร์สิทธิ์เป็นทุกคนที่มีลิงก์มีสิทธิ์อ่าน");
