@@ -135,11 +135,24 @@ export async function syncLocalToSheets(
     await clearSheetRange(token, spreadsheetId, "Scores!A:M");
     const scoreValues = [
       ["รหัสการส่ง", "รหัสนักเรียน", "ชื่อนักเรียน", "ชั้นเรียน", "รหัสข้อสอบ", "ชื่อข้อสอบ", "คะแนนที่ได้", "คะแนนเต็ม", "ทำไปทั้งหมด", "จำนวนข้อทั้งหมด", "เวลาที่ส่ง", "สถานะ", "คำตอบ JSON"],
-      ...submissions.map(s => [
-        s.submissionId, s.studentId, s.studentName, s.studentClassName,
-        s.examId, s.examTitle, s.score, s.totalPoints, s.answeredCount,
-        s.totalQuestions, s.submittedAt, s.status, JSON.stringify(s.answers || {}),
-      ]),
+      ...submissions.map(s => {
+        // คลีนภาพวาดเขียนออกก่อนเขียนลงสเปรดชีตเพื่อเลี่ยงปัญหาเซลล์โดนตัดขาด (เกิน 50,000 ตัวอักษร)
+        const cleanedAnswers = s.answers ? JSON.parse(JSON.stringify(s.answers)) : {};
+        Object.keys(cleanedAnswers).forEach((qId) => {
+          const ans = cleanedAnswers[qId];
+          if (ans && typeof ans === "object" && ans.drawing) {
+            cleanedAnswers[qId] = {
+              ...ans,
+              drawing: "__HAS_DRAWING__"
+            };
+          }
+        });
+        return [
+          s.submissionId, s.studentId, s.studentName, s.studentClassName,
+          s.examId, s.examTitle, s.score, s.totalPoints, s.answeredCount,
+          s.totalQuestions, s.submittedAt, s.status, JSON.stringify(cleanedAnswers),
+        ];
+      }),
     ];
     await updateSheetRange(token, spreadsheetId, "Scores!A1", scoreValues);
 
@@ -402,3 +415,40 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
     return null;
   }
 }
+
+// 🛠️ ผสานข้อคำตอบของนักเรียนที่ดึงมาจากสเปรดชีตกับข้อมูลในเครื่อง / Firestore เพื่อดึงภาพวาดเขียนกลับคืนมา
+export function mergeSubmissionsPreservingDrawings(
+  sheetSubs: Submission[],
+  localSubs: Submission[]
+): Submission[] {
+  return sheetSubs.map((sheetSub) => {
+    const localSub = localSubs.find((l) => l.submissionId === sheetSub.submissionId);
+    if (!localSub) return sheetSub;
+
+    const mergedAnswers = sheetSub.answers ? { ...sheetSub.answers } : {};
+    if (localSub.answers) {
+      Object.keys(localSub.answers).forEach((qId) => {
+        const localAns = localSub.answers[qId];
+        const sheetAns = mergedAnswers[qId];
+
+        if (localAns && typeof localAns === "object") {
+          if (!sheetAns) {
+            mergedAnswers[qId] = localAns;
+          } else if (typeof sheetAns === "object") {
+            const hasPlaceholder = sheetAns.drawing === "__HAS_DRAWING__" || !sheetAns.drawing;
+            mergedAnswers[qId] = {
+              ...sheetAns,
+              drawing: hasPlaceholder && localAns.drawing ? localAns.drawing : sheetAns.drawing
+            };
+          }
+        }
+      });
+    }
+
+    return {
+      ...sheetSub,
+      answers: mergedAnswers
+    };
+  });
+}
+

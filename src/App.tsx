@@ -14,6 +14,7 @@ import {
   syncLocalToSheets,
   fetchFromSheets,
   fetchPublicSheetsData,
+  mergeSubmissionsPreservingDrawings,
 } from "./lib/googleSheets";
 import {
   saveSettingsToFirestore,
@@ -436,7 +437,11 @@ export default function App() {
         const fetched = await fetchFromSheets(token, targetSheetId);
         let studentsToSync = updatedStudents !== undefined ? updatedStudents : (fetched?.students || JSON.parse(localStorage.getItem("exam_students") || "[]"));
         let examsToSync = updatedExams !== undefined ? updatedExams : (fetched?.exams || JSON.parse(localStorage.getItem("exam_exams") || "[]"));
-        let submissionsToSync = updatedSubmissions !== undefined ? updatedSubmissions : (fetched?.submissions || JSON.parse(localStorage.getItem("exam_submissions") || "[]"));
+        let submissionsToSync = updatedSubmissions !== undefined 
+          ? updatedSubmissions 
+          : (fetched?.submissions 
+              ? mergeSubmissionsPreservingDrawings(fetched.submissions, JSON.parse(localStorage.getItem("exam_submissions") || "[]"))
+              : JSON.parse(localStorage.getItem("exam_submissions") || "[]"));
         let settingsToSync = updatedSettings !== undefined ? updatedSettings : (fetched?.settings || JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)));
 
         setStudents(studentsToSync);
@@ -497,7 +502,9 @@ export default function App() {
 
       let mergedStudents = fetched && fetched.students && fetched.students.length > 0 ? fetched.students : currentLocals.students;
       let mergedExams = fetched && fetched.exams && fetched.exams.length > 0 ? fetched.exams : currentLocals.exams;
-      let mergedSubmissions = fetched && fetched.submissions && fetched.submissions.length > 0 ? fetched.submissions : currentLocals.submissions;
+      let mergedSubmissions = fetched && fetched.submissions && fetched.submissions.length > 0 
+        ? mergeSubmissionsPreservingDrawings(fetched.submissions, currentLocals.submissions) 
+        : currentLocals.submissions;
       let mergedSettings = fetched && fetched.settings ? { ...currentLocals.settings, ...fetched.settings } : currentLocals.settings;
 
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
