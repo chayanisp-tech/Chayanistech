@@ -40,6 +40,10 @@ type Screen =
   | "teacher_login"
   | "teacher_dashboard";
 
+// -------------------------------------------------------------
+// 1. ใส่รหัส Google Sheets ID ของคุณครูที่นี่ (ก๊อปปี้จาก URL)
+const MY_MASTER_SHEET_ID = "1mmK7TYBhRRnsmOzwauGkbOySs6tcP0tDnzZROzYuRUc";
+
 // ฟังก์ชันแกะรหัส ID จาก URL ของ Google Sheets ทั้งแบบสั้นและแบบยาว
 const extractSpreadsheetId = (urlOrId: string | null): string | null => {
   if (!urlOrId) return null;
@@ -84,7 +88,7 @@ export default function App() {
 
   const isSubmittingRef = useRef(false);
 
-  // 📡 ระบบดึงข้อมูลเรียลไทม์ฝั่งคุณครูแบบปลอดภัย (ใช้การ Poll ข้อมูลหลังบ้านสม่ำเสมอทุกๆ 5 วินาทีเมื่ออยู่หน้าแดชบอร์ด เพื่อให้ข้อมูลขึ้นเว็บสดใหม่ตลอดเวลา โดยไม่ทำให้เว็บเดี้ยง)
+  // 📡 ระบบดึงข้อมูลเรียลไทม์ฝั่งคุณครูแบบปลอดภัย
   useEffect(() => {
     if (currentScreen !== "teacher_dashboard") return;
 
@@ -103,10 +107,7 @@ export default function App() {
       }
     };
 
-    // ดึงข้อมูลครั้งแรกทันทีก่อน
     fetchLatestData();
-
-    // ตั้งเวลาดึงข้อมูลอัตโนมัติทุกๆ 5 วินาทีเงียบๆ หลังบ้าน
     const intervalId = setInterval(fetchLatestData, 5000);
 
     return () => {
@@ -182,6 +183,9 @@ export default function App() {
     localStorage.setItem("exam_sync_status", JSON.stringify(clearedSync));
   };
 
+  // -------------------------------------------------------------
+  // 🛠️ 2. แก้ไข useEffect นี้: ให้บังคับโหลดข้อมูลจาก MY_MASTER_SHEET_ID ทันที
+  // -------------------------------------------------------------
   useEffect(() => {
     const localStudents = localStorage.getItem("exam_students");
     const localExams = localStorage.getItem("exam_exams");
@@ -207,17 +211,10 @@ export default function App() {
       if (parsedSync.spreadsheetId) setActiveSheetId(parsedSync.spreadsheetId);
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const sheetIdParam = urlParams.get("sheetId");
-    if (sheetIdParam) {
-      const cleanId = extractSpreadsheetId(sheetIdParam);
-      if (cleanId) {
-        localStorage.setItem("student_active_sheet_id", cleanId);
-        loadPublicData(cleanId);
-      }
-    } else {
-      const savedSheetId = localStorage.getItem("student_active_sheet_id");
-      if (savedSheetId) loadPublicData(savedSheetId);
+    // บังคับเซฟและดึงข้อมูลจาก Master Sheet ทันทีที่เปิดเว็บ
+    if (MY_MASTER_SHEET_ID && MY_MASTER_SHEET_ID !== "ใส่_รหัส_Sheet_ID_ของคุณครูไว้ที่นี่") {
+      localStorage.setItem("student_active_sheet_id", MY_MASTER_SHEET_ID);
+      loadPublicData(MY_MASTER_SHEET_ID);
     }
   }, []);
 
@@ -316,7 +313,6 @@ export default function App() {
     }
   };
 
- // 🔄 ระบบซิงค์ข้อมูลเวอร์ชันฉลาด: ดึงรายชื่อจาก Sheets มาอัปเดตบนเว็บเสมอ ป้องกันเว็บไปลบ Sheets
   const handleFullSync = async (forceToken?: string) => {
     const token = forceToken || getAccessToken();
     if (!token) {
@@ -339,10 +335,8 @@ export default function App() {
 
       if (!sheetId) throw new Error("ล้มเหลวในการดึงข้อมูลหรือจัดสร้างสเปรดชีต");
 
-      // 📥 1. ดึงข้อมูลล่าสุดจากใน Google Sheets ของคุณครูมาก่อนเสมอ
       const fetched = await fetchFromSheets(token, sheetId);
       
-      // ดึงข้อมูลในเครื่องปัจจุบันมารอไว้
       const currentLocals = {
         students: JSON.parse(localStorage.getItem("exam_students") || "[]"),
         exams: JSON.parse(localStorage.getItem("exam_exams") || "[]"),
@@ -350,16 +344,13 @@ export default function App() {
         settings: JSON.parse(localStorage.getItem("exam_settings") || JSON.stringify(DEFAULT_SETTINGS)),
       };
 
-      // 🧠 ตรวจสอบความฉลาด: ถ้าใน Google Sheets มีรายชื่อนักเรียน ให้ดึงจาก Sheets มาแสดงบนเว็บทันที!
       let mergedStudents = fetched && fetched.students && fetched.students.length > 0 ? fetched.students : currentLocals.students;
       let mergedExams = fetched && fetched.exams && fetched.exams.length > 0 ? fetched.exams : currentLocals.exams;
       let mergedSubmissions = fetched && fetched.submissions && fetched.submissions.length > 0 ? fetched.submissions : currentLocals.submissions;
       let mergedSettings = fetched && fetched.settings ? { ...currentLocals.settings, ...fetched.settings } : currentLocals.settings;
 
-      // 💾 2. บันทึกข้อมูลที่ดึงมาจาก Sheets ลงในระบบหน้าเว็บแดชบอร์ด
       saveStateToLocal(mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
       
-      // 📤 3. ส่งข้อมูลกลับไปซิงค์เพื่อความชัวร์ (โดยที่ข้อมูลรายชื่อนักเรียนจะไม่หายเพราะเราดึงมาเติมแล้ว)
       await syncLocalToSheets(token, sheetId, mergedStudents, mergedExams, mergedSubmissions, mergedSettings);
 
       const nextSync: SyncStatus = {
@@ -402,22 +393,17 @@ export default function App() {
     }
   };
 
-  // 🚀 ฟังก์ชันส่งข้อสอบ (ได้รับการปกป้องและแก้ไขข้อผิดพลาดแล้ว)
   const handleExamSubmitted = async (submission: Submission) => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
     try {
-      // 1. อัปเดตข้อมูลเซฟลงบราวเซอร์เครื่องนักเรียน
       const nextSubmissions = [submission, ...submissions];
-      
-      // ✅ บันทึกลงบราวเซอร์และพุชขึ้น Firestore แบบปลอดภัย 100%
       saveStateToLocal(undefined, undefined, nextSubmissions);
       
       setLatestSubmission(submission);
       setCurrentScreen("student_success");
 
-      // 2. 📊 ยิงเข้า Google Sheets ของคุณครูโดยตรงแยกต่างหากผ่าน Web App อัตโนมัติ
       const webAppUrl = "https://script.google.com/macros/s/AKfycbxPc9UKoEkXe6GmhX4bjYlxNBdgYWfGV3ACJVkdobj3IgOIgbWRBRmTJyz3KlspfCCubg/exec"; 
 
       if (webAppUrl) {
@@ -483,21 +469,16 @@ export default function App() {
   };
 
   const handleBulkLoadDefaults = () => {
-    // 1. กรองเอารายชื่อตัวอย่างที่ "รหัสยังไม่ซ้ำ" กับรายชื่อที่คุณครูมีอยู่
     const newDefaults = DEFAULT_STUDENTS.filter(
       (defaultStudent) => !students.some((existingStudent) => existingStudent.id === defaultStudent.id)
     );
 
-    // 2. เช็กว่าถ้ารายชื่อตัวอย่างถูกเพิ่มไปหมดแล้ว จะได้ไม่ต้องเซฟซ้ำ
     if (newDefaults.length === 0) {
       alert("รายชื่อตัวอย่างถูกเพิ่มเข้าระบบหมดแล้วครับ ไม่มีรายชื่อใหม่ให้เพิ่มเพิ่มเติม");
       return;
     }
 
-    // 3. เอาข้อมูลนักเรียนเดิม (students) มาต่อท้ายด้วยข้อมูลตัวอย่างที่กรองแล้ว (newDefaults)
     const combinedStudents = [...students, ...newDefaults];
-
-    // 4. บันทึกข้อมูลทั้งหมดกลับขึ้น Google Sheets (และอัปเดตหน้าเว็บ)
     pushStateToSheets(combinedStudents);
     alert("เพิ่มรายชื่อนักเรียนตัวอย่างต่อท้ายระบบเรียบร้อยแล้วครับ! 🎉");
   };
