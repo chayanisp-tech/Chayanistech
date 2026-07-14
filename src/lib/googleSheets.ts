@@ -317,7 +317,7 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
         return json.table?.rows ? json.table.rows.map((r: any) => r.c ? r.c.map((cell: any) => cell?.v ?? "") : []) : null;
       }
     } catch (e) {
-      console.error(`Error fetching tab [${sheetName}]:`, e);
+      console.warn(`[Google Sheets] Quietly skipped tab [${sheetName}] fetching:`, e);
       return null;
     }
   };

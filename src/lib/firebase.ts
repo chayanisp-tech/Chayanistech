@@ -1,13 +1,14 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from "firebase/auth";
-import { getFirestore } from "firebase/firestore"; // ⬅️ แก้จุดที่ 1 ตรงนี้
+import { initializeFirestore } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app); // ⬅️ แก้จุดที่ 2 ตรงนี้ (เอา Long-Polling ออก)
-
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId || "(default)");
 export const googleProvider = new GoogleAuthProvider();
 // Request workspace scopes for Drive and Sheets
 googleProvider.addScope("https://www.googleapis.com/auth/drive.file");

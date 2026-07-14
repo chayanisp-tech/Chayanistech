@@ -197,8 +197,8 @@ export default function StudentWelcome({
                   value={studentId}
                   onChange={handleInputChange}
                   placeholder="00000"
-                  disabled={isValidating}
-                  className="w-full pl-11 pr-4 py-2.5 rounded-full border border-[#e0bfbc] bg-white focus:border-[#8e171c] focus:ring-4 focus:ring-[#8e171c]/10 transition-all text-center text-xl font-bold tracking-[0.5em] text-[#251817] outline-none placeholder:text-gray-200"
+                  disabled={isValidating || isLoadingPublicData}
+                  className="w-full pl-11 pr-4 py-2.5 rounded-full border border-[#e0bfbc] bg-white focus:border-[#8e171c] focus:ring-4 focus:ring-[#8e171c]/10 transition-all text-center text-xl font-bold tracking-[0.5em] text-[#251817] outline-none placeholder:text-gray-200 disabled:bg-gray-50 disabled:text-gray-400"
                   required
                 />
               </div>
@@ -212,11 +212,11 @@ export default function StudentWelcome({
             <div className="pt-0.5">
               <button
                 type="submit"
-                disabled={isValidating}
-                className="w-full bg-[#8e171c] hover:bg-[#8c161b] text-white font-bold py-3 rounded-full shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-80 text-xs"
+                disabled={isValidating || isLoadingPublicData}
+                className="w-full bg-[#8e171c] hover:bg-[#8c161b] text-white font-bold py-3 rounded-full shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-80 text-xs disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
               >
-                <span>{isValidating ? "กำลังตรวจสอบ..." : "เข้าสู่ห้องสอบ"}</span>
-                {!isValidating && <span className="material-symbols-outlined text-[16px]">arrow_forward</span>}
+                <span>{isLoadingPublicData ? "กำลังเตรียมข้อมูลห้องสอบ..." : isValidating ? "กำลังตรวจสอบ..." : "เข้าสู่ห้องสอบ"}</span>
+                {!isValidating && !isLoadingPublicData && <span className="material-symbols-outlined text-[16px]">arrow_forward</span>}
               </button>
             </div>
 

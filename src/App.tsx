@@ -256,13 +256,25 @@ export default function App() {
       try {
         console.log("🔥 กำลังอัปเดตรายชื่อและข้อสอบล่าสุดจากระบบคลาวด์ Firebase...");
         
-        // ดึงเฉพาะคอลเลกชันนักเรียน
-        const studentsSnapshot = await getDocs(collection(db, "students"));
-        const fStudents = studentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
+        let fStudents: Student[] = [];
+        try {
+          // ดึงเฉพาะคอลเลกชันนักเรียน
+          const studentsSnapshot = await getDocs(collection(db, "students"));
+          fStudents = studentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
+          console.log(`✅ ดึงรายชื่อนักเรียนสำเร็จ (${fStudents.length} คน)`);
+        } catch (studentErr) {
+          console.error("❌ ดึงข้อมูลรายชื่อนักเรียนจาก Firestore ล้มเหลว:", studentErr);
+        }
 
-        // ดึงเฉพาะคอลเลกชันข้อสอบ
-        const examsSnapshot = await getDocs(collection(db, "exams"));
-        const fExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Exam[];
+        let fExams: Exam[] = [];
+        try {
+          // ดึงเฉพาะคอลเลกชันข้อสอบ
+          const examsSnapshot = await getDocs(collection(db, "exams"));
+          fExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Exam[];
+          console.log(`✅ ดึงข้อมูลข้อสอบสำเร็จ (${fExams.length} ชุด)`);
+        } catch (examErr) {
+          console.error("❌ ดึงข้อมูลข้อสอบจาก Firestore ล้มเหลว:", examErr);
+        }
 
         // ประวัติ submissions และ settings ให้ใช้ตามความจำเครื่องไปก่อน เพื่อตัดปัญหาความหน่วงสะสม
         const fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
@@ -271,26 +283,111 @@ export default function App() {
         if (fStudents && fStudents.length > 0) {
           setStudents(fStudents);
           localStorage.setItem("exam_students", JSON.stringify(fStudents));
+        } else if (localStudents) {
+          try {
+            const parsedLocalStudents = JSON.parse(localStudents);
+            if (parsedLocalStudents.length > 0) {
+              console.log("☁️ ระบบตรวจพบข้อมูลนักเรียนในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
+              syncStudentsToFirestore(parsedLocalStudents).catch(err => console.error(err));
+            }
+          } catch (pErr) {
+            console.error("Error parsing local students:", pErr);
+          }
         }
+
         if (fExams && fExams.length > 0) {
           setExams(fExams);
           localStorage.setItem("exam_exams", JSON.stringify(fExams));
+        } else if (localExams) {
+          try {
+            const parsedLocalExams = JSON.parse(localExams);
+            if (parsedLocalExams.length > 0) {
+              console.log("☁️ ระบบตรวจพบข้อสอบในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
+              syncExamsToFirestore(parsedLocalExams).catch(err => console.error(err));
+            }
+          } catch (pErr) {
+            console.error("Error parsing local exams:", pErr);
+          }
         }
+
         if (fSubmissions && fSubmissions.length > 0) {
           setSubmissions(fSubmissions);
           localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
+        } else if (localSubmissions) {
+          try {
+            const parsedLocalSubmissions = JSON.parse(localSubmissions);
+            if (parsedLocalSubmissions.length > 0) {
+              console.log("☁️ ระบบตรวจพบประวัติส่งข้อสอบในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
+              syncSubmissionsToFirestore(parsedLocalSubmissions).catch(err => console.error(err));
+            }
+          } catch (pErr) {
+            console.error("Error parsing local submissions:", pErr);
+          }
         }
+
         if (fSettings) {
           setSettings(fSettings);
           localStorage.setItem("exam_settings", JSON.stringify(fSettings));
+        } else if (localSettings) {
+          try {
+            const parsedLocalSettings = JSON.parse(localSettings);
+            if (parsedLocalSettings) {
+              console.log("☁️ ระบบตรวจพบการตั้งค่าในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
+              saveSettingsToFirestore(parsedLocalSettings).catch(err => console.error(err));
+            }
+          } catch (pErr) {
+            console.error("Error parsing local settings:", pErr);
+          }
         }
-        console.log("⚡ อัปเดตข้อมูลห้องเรียนผ่าน Firebase สำเร็จ 100%");
+        console.log("⚡ อัปเดตข้อมูลห้องเรียนผ่าน Firebase เสร็จสิ้น");
       } catch (e) {
         console.error("Firebase Initialization Failed:", e);
-        setPublicDataError("ไม่สามารถเชื่อมต่อคลาวด์กลางได้ ระบบกำลังใช้ข้อมูลล่าสุดที่มีในเครื่องของนักเรียน");
-      } finally {
-        setIsLoadingPublicData(false);
       }
+
+      // 3. ดึงรายชื่อนักเรียนและข้อสอบล่าสุดจากตาราง Google Sheets เสมอ (กรณีผู้ใช้เปิดจากเครื่องใหม่)
+      if (MY_MASTER_SHEET_ID) {
+        try {
+          const cleanSheetId = extractSpreadsheetId(MY_MASTER_SHEET_ID);
+          if (cleanSheetId) {
+            console.log("📋 กำลังดึงรายชื่อและข้อสอบล่าสุดจากตารางหลัก Google Sheets เสนอคุณครู:", cleanSheetId);
+            const fetched = await fetchPublicSheetsData(cleanSheetId);
+            if (fetched) {
+              if (fetched.students && fetched.students.length > 0) {
+                setStudents(fetched.students);
+                localStorage.setItem("exam_students", JSON.stringify(fetched.students));
+              }
+              if (fetched.exams && fetched.exams.length > 0) {
+                setExams(fetched.exams);
+                localStorage.setItem("exam_exams", JSON.stringify(fetched.exams));
+              }
+              if (fetched.settings) {
+                const mergedSettings = { ...DEFAULT_SETTINGS, ...fetched.settings };
+                setSettings(mergedSettings);
+                localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
+              }
+
+              const isPublishedToken = cleanSheetId.startsWith("2PACX-");
+              const updatedSync: SyncStatus = {
+                spreadsheetId: cleanSheetId,
+                spreadsheetUrl: isPublishedToken 
+                  ? `https://docs.google.com/spreadsheets/d/e/${cleanSheetId}/pubhtml`
+                  : `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
+                lastSyncedAt: new Date().toISOString(),
+                isSyncing: false,
+                error: null,
+              };
+              setSyncStatus(updatedSync);
+              localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
+              setActiveSheetId(cleanSheetId);
+              console.log("⚡ ซิงค์ตารางเรียน Google Sheets อัตโนมัติสำเร็จ!");
+            }
+          }
+        } catch (sheetError) {
+          console.error("Silent startup Google Sheets pull failed:", sheetError);
+        }
+      }
+
+      setIsLoadingPublicData(false);
     };
 
     initializeApp();

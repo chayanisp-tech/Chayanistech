@@ -13,27 +13,22 @@ service cloud.firestore {
 
     // Exams rules
     match /exams/{examId} {
-      allow read: if true; // Allowed for students to retrieve exams
-      allow write: if request.auth != null; // Only authenticated teachers can edit exams
+      allow read, write: if true;
     }
 
     // Students rules
     match /students/{studentId} {
-      allow read: if true; // Allowed for student validation
-      allow write: if request.auth != null; // Only teachers can edit student lists
+      allow read, write: if true;
     }
 
     // Settings rules
     match /settings/{docId} {
-      allow read: if true; // Students need settings (e.g. lockdown, durations)
-      allow write: if request.auth != null; // Only teachers can save settings
+      allow read, write: if true;
     }
 
     // Submissions rules
     match /submissions/{submissionId} {
-      allow create: if true; // Anyone can submit an exam
-      allow read: if true; // Student lookup or teacher list
-      allow update, delete: if request.auth != null; // Only teachers can grade or delete submissions
+      allow read, write: if true;
     }
   }
 }

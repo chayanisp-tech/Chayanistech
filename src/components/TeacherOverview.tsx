@@ -41,7 +41,10 @@ export default function TeacherOverview({
       totalScoreObtained += sub.score || 0;
       // ไปค้นหาคะแนนเต็มจากตัวข้อสอบจริง (exams) โดยใช้ examId
       const relatedExam = exams.find((e) => e.id === sub.examId);
-      totalMaxScore += relatedExam ? (relatedExam.totalScore || 0) : (sub.score || 10);
+      const examTotalScore = relatedExam
+        ? relatedExam.questions.reduce((sum, q) => sum + (q.points || 0), 0)
+        : (sub.totalPoints || sub.score || 10);
+      totalMaxScore += examTotalScore;
     });
 
     if (totalMaxScore > 0) {

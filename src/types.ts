@@ -2,6 +2,8 @@ export interface Student {
   id: string; // 5-digit ID (e.g., "10001")
   name: string;
   className: string;
+  classInfo?: string;
+  department?: string;
 }
 
 export interface Question {

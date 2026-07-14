@@ -15,9 +15,9 @@ export const fetchStudentExamDataFromFirebase = async () => {
     // 2. ดึงข้อมูลการส่งข้อสอบทั้งหมดจากคอลเลกชัน 'submissions'
     const submissionsSnapshot = await getDocs(collection(db, "submissions"));
     const submissionsList = submissionsSnapshot.docs.map((doc) => ({
-      id: doc.id,
+      submissionId: doc.id,
       ...doc.data(),
-    })) as Submission[];
+    })) as unknown as Submission[];
 
     // 3. ดึงเฉพาะข้อสอบที่ "เปิดใช้งานอยู่" (isActive: true) จากคอลเลกชัน 'exams'
     const examsQuery = query(collection(db, "exams"), where("isActive", "==", true));

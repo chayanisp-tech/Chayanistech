@@ -38,6 +38,7 @@ export default function TeacherStudents({
     onAddStudent({
       id: newStudent.id,
       name: newStudent.name,
+      className: newStudent.classInfo,
       classInfo: newStudent.classInfo,
     });
     setNewStudent({ id: "", name: "", classInfo: "" });

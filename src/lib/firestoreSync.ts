@@ -250,19 +250,29 @@ export async function fetchSubmissionsFromFirestore(): Promise<Submission[]> {
 export async function syncSubmissionsToFirestore(updatedSubmissions: Submission[]): Promise<void> {
   const path = "submissions";
   try {
-    const existing = await fetchSubmissionsFromFirestore();
-    const currentIds = new Set(updatedSubmissions.map(s => s.submissionId));
-    
-    // Delete removed submissions
-    for (const sub of existing) {
-      if (!currentIds.has(sub.submissionId)) {
-        await deleteDoc(doc(db, "submissions", sub.submissionId));
+    // 1. Write/update current submissions first
+    for (const sub of updatedSubmissions) {
+      try {
+        await saveSubmissionToFirestore(sub);
+      } catch (writeErr) {
+        console.warn(`[Firestore Resilient] Failed to write submission ${sub.submissionId}:`, writeErr);
       }
     }
     
-    // Write current submissions
-    for (const sub of updatedSubmissions) {
-      await saveSubmissionToFirestore(sub);
+    // 2. Only attempt to delete removed submissions if authenticated (teachers/admins)
+    if (auth.currentUser) {
+      try {
+        const existing = await fetchSubmissionsFromFirestore();
+        const currentIds = new Set(updatedSubmissions.map(s => s.submissionId));
+        
+        for (const sub of existing) {
+          if (!currentIds.has(sub.submissionId)) {
+            await deleteDoc(doc(db, "submissions", sub.submissionId));
+          }
+        }
+      } catch (deleteErr) {
+        console.warn("[Firestore Resilient] Failed to delete removed submissions (likely permission restricted):", deleteErr);
+      }
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

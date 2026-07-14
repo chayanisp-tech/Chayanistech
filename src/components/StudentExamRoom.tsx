@@ -32,6 +32,10 @@ export default function StudentExamRoom({
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [isExamStarted, setIsExamStarted] = useState(false);
 
+  // ตรวจสอบสถานะการเปิดหน้าจอด้านการตรวจทานคำตอบก่อนส่งจริง
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [confirmSubmitChecked, setConfirmSubmitChecked] = useState(false);
+
   // นับแต้มเตือนการทุจริตภายในห้องสอบ
   const [cheatCount, setCheatCount] = useState(0);
   const cheatCountRef = useRef(0);
@@ -192,7 +196,7 @@ export default function StudentExamRoom({
     // สลับข้อสอบและชอยส์
     let randomizedQuestions = shuffleArray(exam.questions);
     randomizedQuestions = randomizedQuestions.map((q) => {
-      if (q.type === "objective" && q.options && q.options.length > 0) {
+      if (q.type === "choice" && q.options && q.options.length > 0) {
         const mappedOptions = q.options.map((opt, idx) => ({
           text: opt,
           isCorrect: idx === q.answerIndex,
@@ -229,7 +233,7 @@ export default function StudentExamRoom({
     setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
   };
 
-  const handleSubmitExam = (isTimeUp = false) => {
+  const executeSubmitExam = () => {
     const exam = selectedExamRef.current;
     if (!exam) return;
 
@@ -255,18 +259,6 @@ export default function StudentExamRoom({
       }
     });
 
-    if (!isTimeUp) {
-      const unansweredCount = exam.questions.length - actualAnsweredCount;
-      let confirmMsg = "คุณแน่ใจหรือไม่ที่จะส่งข้อสอบ? เมื่อส่งแล้วจะไม่สามารถแก้ไขคำตอบได้อีก";
-      if (unansweredCount > 0) {
-        confirmMsg = `คุณยังไม่ได้ตอบคำถามอีก ${unansweredCount} ข้อ แน่ใจหรือไม่ที่จะส่งข้อสอบในตอนนี้?`;
-      }
-      const confirmed = window.confirm(confirmMsg);
-      if (!confirmed) return;
-    } else {
-      alert("หมดเวลาทำข้อสอบ! ระบบจะทำการส่งข้อสอบของคุณโดยอัตโนมัติ");
-    }
-
     const newSubmission: Submission = {
       submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
       studentId: student.id,
@@ -286,7 +278,19 @@ export default function StudentExamRoom({
     setIsExamStarted(false);
     setSelectedExam(null);
     setCheatCount(0);
+    setShowReviewModal(false);
+    setConfirmSubmitChecked(false);
     onExamSubmitted(newSubmission);
+  };
+
+  const handleSubmitExam = (isTimeUp = false) => {
+    if (isTimeUp) {
+      alert("🚨 หมดเวลาทำข้อสอบ! ระบบกำลังทำการส่งกระดาษคำตอบของคุณโดยอัตโนมัติ...");
+      executeSubmitExam();
+    } else {
+      setShowReviewModal(true);
+      setConfirmSubmitChecked(false);
+    }
   };
 
   if (!selectedExam) {
@@ -412,7 +416,7 @@ export default function StudentExamRoom({
   const isTimeCritical = secondsRemaining <= 300;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#fff8f7] font-sans pt-16 text-[#251817]">
+    <div className="min-h-screen flex flex-col bg-[#fff8f7] font-sans pt-16 text-[#251817] select-none">
       {/* Top Header */}
       <header className="fixed top-0 left-0 w-full z-50 bg-white border-b border-[#e0bfbc]/30 h-16 shadow-sm">
         <div className="flex justify-between items-center px-6 h-full w-full max-w-7xl mx-auto">
@@ -438,88 +442,235 @@ export default function StudentExamRoom({
 
       {/* Main Container */}
       <main className="flex-grow max-w-4xl w-full mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-4">
-          <div className="md:col-span-1 bg-white border border-[#e0bfbc]/40 rounded-3xl p-5 h-fit shadow-sm">
-            <h4 className="text-xs font-bold text-[#59413f] uppercase tracking-wider mb-4">ผังข้อสอบ</h4>
-            <div className="grid grid-cols-4 gap-2">
+        {showReviewModal ? (
+          <div className="bg-white border border-[#e0bfbc]/60 rounded-3xl p-6 md:p-8 shadow-sm space-y-6 animate-fade-in mt-4">
+            <div className="border-b border-[#e0bfbc]/30 pb-4">
+              <h2 className="text-2xl font-bold text-[#251817] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#8e171c] text-3xl">task_alt</span>
+                ตรวจทานคำตอบของคุณอีก 1 รอบก่อนส่ง
+              </h2>
+              <p className="text-sm text-[#59413f] mt-1">
+                กรุณาตรวจสอบการตอบคำถามแต่ละข้อด้านล่างนี้ให้ละเอียด เมื่อกดยืนยันส่งข้อสอบแล้วจะไม่สามารถแก้ไขได้อีกในทุกกรณี
+              </p>
+            </div>
+
+            {/* สรุปจำนวนข้อตอบ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#fff8f7] p-4 rounded-2xl border border-[#e0bfbc]/30">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-green-600">done_all</span>
+                <span className="text-sm font-bold text-[#251817]">
+                  ตอบไปแล้ว: {selectedExam.questions.filter(q => {
+                    const ans = answers[q.id];
+                    if (q.type === "subjective") return !!(ans?.text?.trim() || ans?.drawing);
+                    return ans !== undefined;
+                  }).length} / {selectedExam.questions.length} ข้อ
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-amber-600">pending_actions</span>
+                <span className="text-sm font-bold text-[#251817]">
+                  ยังไม่ได้ตอบ: {selectedExam.questions.length - selectedExam.questions.filter(q => {
+                    const ans = answers[q.id];
+                    if (q.type === "subjective") return !!(ans?.text?.trim() || ans?.drawing);
+                    return ans !== undefined;
+                  }).length} ข้อ
+                </span>
+              </div>
+            </div>
+
+            {/* รายละเอียดคำตอบแต่ละข้อ */}
+            <div className="space-y-4 max-h-[380px] overflow-y-auto pr-2 custom-scrollbar">
               {selectedExam.questions.map((q, idx) => {
-                const isAnswered = q.type === "subjective" ? !!(answers[q.id]?.text?.trim() || answers[q.id]?.drawing) : answers[q.id] !== undefined;
-                const isCurrent = idx === currentQuestionIndex;
+                const ans = answers[q.id];
+                const isAnswered = q.type === "subjective" ? !!(ans?.text?.trim() || ans?.drawing) : ans !== undefined;
+
                 return (
-                  <button
-                    key={q.id}
-                    onClick={() => setCurrentQuestionIndex(idx)}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
-                      isCurrent ? "bg-[#8e171c] text-white ring-4 ring-[#8e171c]/15" : isAnswered ? "bg-[#ffd0cc] text-[#8e171c]" : "bg-[#fff8f7] text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
-                    }`}
-                  >
-                    {idx + 1}
-                  </button>
+                  <div key={q.id} className={`p-4 rounded-2xl border transition-all ${isAnswered ? "bg-[#fffcfc] border-[#e0bfbc]/40" : "bg-red-50/40 border-red-200/50"}`}>
+                    <div className="flex justify-between items-start gap-4 mb-2">
+                      <div className="flex items-start gap-2">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${isAnswered ? "bg-[#8e171c] text-white" : "bg-red-100 text-red-700"}`}>
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <p className="text-sm font-bold text-[#251817] line-clamp-2">{q.text}</p>
+                          <p className="text-[11px] text-gray-500 font-medium">ประเภท: {q.type === "subjective" ? "อัตนัย (เขียนตอบ)" : "ปรนัย (ตัวเลือก)"} | คะแนน: {q.points} คะแนน</p>
+                        </div>
+                      </div>
+                      <div>
+                        {isAnswered ? (
+                          <span className="text-[11px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full whitespace-nowrap">ตอบแล้ว</span>
+                        ) : (
+                          <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full whitespace-nowrap">ยังไม่ได้ตอบ</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* แสดงสิ่งที่ตอบ */}
+                    <div className="mt-3 pl-8 text-xs text-[#59413f] bg-white border border-[#e0bfbc]/20 rounded-xl p-3">
+                      {q.type !== "subjective" ? (
+                        ans !== undefined ? (
+                          <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[16px] text-green-600">check</span>
+                            <span>คำตอบที่เลือก: <strong className="text-[#8e171c]">ตัวเลือกที่ {ans + 1}</strong> ({q.options[ans]})</span>
+                          </div>
+                        ) : (
+                          <span className="text-red-500 font-semibold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[16px]">warning</span>
+                            กรุณากลับไปตอบคำถามข้อนี้
+                          </span>
+                        )
+                      ) : (
+                        <div className="space-y-2">
+                          {ans?.text?.trim() ? (
+                            <div>
+                              <p className="font-bold text-gray-700 mb-1">คำอธิบายที่บันทึก:</p>
+                              <p className="bg-gray-50 p-2 rounded-lg italic text-[#251817] border border-gray-100 leading-relaxed whitespace-pre-wrap">{ans.text}</p>
+                            </div>
+                          ) : null}
+                          {ans?.drawing ? (
+                            <div>
+                              <p className="font-bold text-gray-700 mb-1">ภาพวาดพู่กันจีน/ภาพสเก็ตช์:</p>
+                              <div className="bg-gray-50 p-2 rounded-lg border border-gray-100 flex justify-center max-w-xs">
+                                <img src={ans.drawing} alt="คำตอบวาดเขียน" className="max-h-24 object-contain rounded" referrerPolicy="no-referrer" />
+                              </div>
+                            </div>
+                          ) : null}
+                          {!ans?.text?.trim() && !ans?.drawing && (
+                            <span className="text-red-500 font-semibold flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[16px]">warning</span>
+                              กรุณากลับไปตอบคำถามข้อนี้
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
-          </div>
 
-          <div className="md:col-span-3 space-y-6">
-            <div className="bg-white border border-[#e0bfbc]/60 rounded-3xl p-6 md:p-8 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <span className="text-xs font-bold text-[#8c706e]">คำถามที่ {currentQuestionIndex + 1} จาก {selectedExam.questions.length}</span>
-                <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full">{currentQuestion.points} คะแนน</span>
+            {/* ส่วนกดยืนยันส่ง */}
+            <div className="border-t border-[#e0bfbc]/30 pt-6 space-y-4">
+              <label className="flex items-start gap-3 cursor-pointer p-3 rounded-2xl bg-amber-50/50 border border-amber-200/60 hover:bg-amber-50 transition-all">
+                <input
+                  type="checkbox"
+                  checked={confirmSubmitChecked}
+                  onChange={(e) => setConfirmSubmitChecked(e.target.checked)}
+                  className="mt-0.5 h-4.5 w-4.5 accent-[#8e171c] cursor-pointer shrink-0"
+                />
+                <span className="text-xs font-bold text-amber-950 leading-relaxed">
+                  ข้าพเจ้ายืนยันว่าได้ทำการตรวจทานคำตอบทั้งหมดเรียบร้อยแล้ว และตกลงส่งกระดาษคำตอบในขณะนี้ โดยเข้าใจว่าระบบจะล็อกผลการสอบและคะแนนทันที และไม่สามารถกลับมาแก้ไขได้อีกเป็นครั้งที่สอง
+                </span>
+              </label>
+
+              <div className="flex justify-between items-center pt-2">
+                <button
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-5 py-2.5 bg-white border border-[#e0bfbc] text-[#59413f] hover:bg-[#fff8f7] rounded-full font-bold text-sm transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                  กลับไปทำต่อ
+                </button>
+                <button
+                  onClick={executeSubmitExam}
+                  disabled={!confirmSubmitChecked}
+                  className={`px-6 py-2.5 rounded-full font-bold text-sm transition-all flex items-center gap-1.5 shadow-md ${
+                    confirmSubmitChecked
+                      ? "bg-[#ba1a1a] hover:bg-[#a01616] text-white shadow-[#ba1a1a]/15 cursor-pointer"
+                      : "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">send</span>
+                  ยืนยันส่งข้อสอบและเสร็จสิ้น
+                </button>
               </div>
-              <h2 className="text-xl font-bold text-[#251817] mb-6">{currentQuestion.text}</h2>
-
-              {currentQuestion.imageUrl && (
-                <div className="mb-8 flex justify-center bg-[#fff8f7] border p-4 rounded-3xl">
-                  <img src={currentQuestion.imageUrl} alt="โจทย์" className="max-h-[350px] object-contain rounded-2xl" referrerPolicy="no-referrer" />
-                </div>
-              )}
-
-              {currentQuestion.type === "subjective" ? (
-                <div className="space-y-6">
-                  {(!currentQuestion.subjectiveMode || currentQuestion.subjectiveMode === "text") && (
-                    <textarea
-                      placeholder="พิมพ์อธิบายคำตอบของคุณที่นี่..."
-                      value={answers[currentQuestion.id]?.text || ""}
-                      onChange={(e) => handleSubjectiveTextChange(currentQuestion.id, e.target.value)}
-                      className="w-full px-5 py-4 rounded-3xl border border-[#e0bfbc] h-36 resize-none outline-none focus:border-[#8e171c]"
-                    />
-                  )}
-                  {currentQuestion.subjectiveMode === "canvas" && (
-                    <DrawingCanvas value={answers[currentQuestion.id]?.drawing || ""} onChange={(dataUrl) => handleSubjectiveDrawingChange(currentQuestion.id, dataUrl)} />
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {currentQuestion.options.map((option, idx) => {
-                    const isSelected = answers[currentQuestion.id] === idx;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => handleSelectOption(currentQuestion.id, idx)}
-                        className={`w-full text-left px-6 py-4 rounded-full border transition-all flex items-center gap-4 cursor-pointer text-sm ${
-                          isSelected ? "border-[#8e171c] bg-[#ffd0cc]/30 text-[#8e171c]" : "border-[#e0bfbc]/70 bg-white"
-                        }`}
-                      >
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${isSelected ? "bg-[#8e171c] text-white" : "bg-[#fbe3e0] text-[#8e171c]"}`}>{idx + 1}</span>
-                        <span>{option}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between items-center">
-              <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex((prev) => prev - 1)} className="px-5 py-2.5 bg-white border border-[#e0bfbc] text-[#59413f] rounded-full font-bold text-sm disabled:opacity-40 cursor-pointer">ย้อนกลับ</button>
-              {currentQuestionIndex < selectedExam.questions.length - 1 ? (
-                <button onClick={() => setCurrentQuestionIndex((prev) => prev + 1)} className="px-6 py-2.5 bg-[#8e171c] text-white rounded-full font-bold text-sm cursor-pointer">ถัดไป</button>
-              ) : (
-                <button onClick={() => handleSubmitExam(false)} className="px-6 py-2.5 bg-[#ba1a1a] text-white rounded-full font-bold text-sm cursor-pointer">ส่งข้อสอบทั้งหมด</button>
-              )}
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-4">
+            <div className="md:col-span-1 bg-white border border-[#e0bfbc]/40 rounded-3xl p-5 h-fit shadow-sm">
+              <h4 className="text-xs font-bold text-[#59413f] uppercase tracking-wider mb-4">ผังข้อสอบ</h4>
+              <div className="grid grid-cols-4 gap-2">
+                {selectedExam.questions.map((q, idx) => {
+                  const isAnswered = q.type === "subjective" ? !!(answers[q.id]?.text?.trim() || answers[q.id]?.drawing) : answers[q.id] !== undefined;
+                  const isCurrent = idx === currentQuestionIndex;
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => setCurrentQuestionIndex(idx)}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-all cursor-pointer ${
+                        isCurrent ? "bg-[#8e171c] text-white ring-4 ring-[#8e171c]/15" : isAnswered ? "bg-[#ffd0cc] text-[#8e171c]" : "bg-[#fff8f7] text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
+                      }`}
+                    >
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="md:col-span-3 space-y-6">
+              <div className="bg-white border border-[#e0bfbc]/60 rounded-3xl p-6 md:p-8 shadow-sm">
+                <div className="flex justify-between items-center mb-6">
+                  <span className="text-xs font-bold text-[#8c706e]">คำถามที่ {currentQuestionIndex + 1} จาก {selectedExam.questions.length}</span>
+                  <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full">{currentQuestion.points} คะแนน</span>
+                </div>
+                <h2 className="text-xl font-bold text-[#251817] mb-6">{currentQuestion.text}</h2>
+
+                {currentQuestion.imageUrl && (
+                  <div className="mb-8 flex justify-center bg-[#fff8f7] border p-4 rounded-3xl">
+                    <img src={currentQuestion.imageUrl} alt="โจทย์" className="max-h-[350px] object-contain rounded-2xl" referrerPolicy="no-referrer" />
+                  </div>
+                )}
+
+                {currentQuestion.type === "subjective" ? (
+                  <div className="space-y-6">
+                    {(!currentQuestion.subjectiveMode || currentQuestion.subjectiveMode === "text") && (
+                      <textarea
+                        placeholder="พิมพ์อธิบายคำตอบของคุณที่นี่..."
+                        value={answers[currentQuestion.id]?.text || ""}
+                        onChange={(e) => handleSubjectiveTextChange(currentQuestion.id, e.target.value)}
+                        className="w-full px-5 py-4 rounded-3xl border border-[#e0bfbc] h-36 resize-none outline-none focus:border-[#8e171c]"
+                      />
+                    )}
+                    {currentQuestion.subjectiveMode === "canvas" && (
+                      <DrawingCanvas value={answers[currentQuestion.id]?.drawing || ""} onChange={(dataUrl) => handleSubjectiveDrawingChange(currentQuestion.id, dataUrl)} />
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {currentQuestion.options.map((option, idx) => {
+                      const isSelected = answers[currentQuestion.id] === idx;
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleSelectOption(currentQuestion.id, idx)}
+                          className={`w-full text-left px-6 py-4 rounded-full border transition-all flex items-center gap-4 cursor-pointer text-sm ${
+                            isSelected ? "border-[#8e171c] bg-[#ffd0cc]/30 text-[#8e171c]" : "border-[#e0bfbc]/70 bg-white"
+                          }`}
+                        >
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${isSelected ? "bg-[#8e171c] text-white" : "bg-[#fbe3e0] text-[#8e171c]"}`}>{idx + 1}</span>
+                          <span>{option}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center">
+                <button disabled={currentQuestionIndex === 0} onClick={() => setCurrentQuestionIndex((prev) => prev - 1)} className="px-5 py-2.5 bg-white border border-[#e0bfbc] text-[#59413f] rounded-full font-bold text-sm disabled:opacity-40 cursor-pointer">ย้อนกลับ</button>
+                {currentQuestionIndex < selectedExam.questions.length - 1 ? (
+                  <button onClick={() => setCurrentQuestionIndex((prev) => prev + 1)} className="px-6 py-2.5 bg-[#8e171c] text-white rounded-full font-bold text-sm cursor-pointer">ถัดไป</button>
+                ) : (
+                  <button onClick={() => handleSubmitExam(false)} className="px-6 py-2.5 bg-[#ba1a1a] text-white rounded-full font-bold text-sm cursor-pointer">ตรวจทานคำตอบเพื่อส่ง</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
+
     </div>
   );
 }

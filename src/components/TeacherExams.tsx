@@ -386,6 +386,15 @@ export default function TeacherExams({
     setIsCreating(true);
   };
 
+  // 📊 คำนวณโครงสร้างและคะแนนสอบทั้งหมดเพื่อแสดงผลในหน้าสร้าง/แก้ไขข้อสอบ
+  const totalQuestions = questions.length;
+  const choiceQuestionsCount = questions.filter((q) => q.type === "choice").length;
+  const subjectiveQuestionsCount = questions.filter((q) => q.type === "subjective").length;
+
+  const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
+  const choicePoints = questions.filter((q) => q.type === "choice").reduce((sum, q) => sum + q.points, 0);
+  const subjectivePoints = questions.filter((q) => q.type === "subjective").reduce((sum, q) => sum + q.points, 0);
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -468,7 +477,64 @@ export default function TeacherExams({
 
             {/* ส่วนสรุปรายการข้อที่มีอยู่แล้ว */}
             <div className="border-t border-[#e0bfbc]/30 pt-6">
-              <h4 className="text-sm font-bold text-[#251817] mb-4">รายการข้อสอบในชุด ({questions.length} ข้อ)</h4>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <h4 className="text-sm font-bold text-[#251817]">รายการข้อสอบในชุด ({questions.length} ข้อ)</h4>
+                
+                {/* 📊 สถิติรวมด่วนแยกตามประเภทข้อสอบ */}
+                <div className="text-[11px] font-semibold text-[#59413f] bg-[#ffe9e7]/50 px-3 py-1.5 rounded-2xl border border-[#e0bfbc]/40 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px]">analytics</span>
+                  <span>โครงสร้างแบบทดสอบ: ปรนัย {choiceQuestionsCount} ข้อ / อัตนัย {subjectiveQuestionsCount} ข้อ</span>
+                </div>
+              </div>
+
+              {/* 📊 กล่องการ์ดรายงานผลข้อมูลโครงสร้างข้อสอบ (Test Spec) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                {/* คำถามทั้งหมด */}
+                <div className="bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="p-2 bg-[#ffe9e7] text-[#8e171c] rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[18px]">assignment</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-[#59413f] uppercase tracking-wider">คำถามทั้งหมด</p>
+                    <p className="text-base font-black text-[#251817] mt-0.5">
+                      {totalQuestions} <span className="text-xs font-normal text-[#59413f]">ข้อ</span>
+                      <span className="mx-1.5 text-gray-300 font-normal">|</span>
+                      {totalPoints} <span className="text-xs font-normal text-[#59413f]">คะแนน</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* ข้อสอบปรนัย */}
+                <div className="bg-[#f0f9ff] border border-blue-100 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="p-2 bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[18px]">radio_button_checked</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">ข้อสอบปรนัย (ตัวเลือก)</p>
+                    <p className="text-base font-black text-blue-950 mt-0.5">
+                      {choiceQuestionsCount} <span className="text-xs font-normal text-blue-600">ข้อ</span>
+                      <span className="mx-1.5 text-blue-200 font-normal">|</span>
+                      {choicePoints} <span className="text-xs font-normal text-blue-600">คะแนน</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* ข้อสอบอัตนัย */}
+                <div className="bg-[#fffbf0] border border-amber-100 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+                  <div className="p-2 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">ข้อสอบอัตนัย (เขียนตอบ)</p>
+                    <p className="text-base font-black text-amber-950 mt-0.5">
+                      {subjectiveQuestionsCount} <span className="text-xs font-normal text-amber-600">ข้อ</span>
+                      <span className="mx-1.5 text-amber-200 font-normal">|</span>
+                      {subjectivePoints} <span className="text-xs font-normal text-amber-600">คะแนน</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {questions.length === 0 ? (
                 <p className="text-xs text-center py-6 text-[#59413f] bg-[#fff8f7] rounded-2xl border border-dashed border-[#e0bfbc]/60">
                   ยังไม่ได้เพิ่มคำถามลงในชุดข้อสอบนี้ กรุณาสร้างคำถามด้านล่างนี้หรือใช้ระบบการนำเข้าไฟล์
