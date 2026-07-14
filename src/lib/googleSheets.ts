@@ -371,7 +371,7 @@ export async function fetchFromSheets(
   }
 }
 
-// Fetch public sheets data (without OAuth token) - UPDATED DUAL MODE FOR PUBLIC/ORGANIZATION LINK
+// Fetch public sheets data (without OAuth token) - FIXED TARGET TAB FOR PUBLISHED CSV
 export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
   students: Student[];
   exams: Exam[];
@@ -383,7 +383,7 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
     try {
       let url = "";
       if (isPublishedToken) {
-        // Mode A: ลิงก์ระบบองค์กรโรงเรียนที่กดเผยแพร่เว็บ -> ดึงแบบ CSV ทะลุกำแพงล็อกอิน
+        // Mode A: ลิงก์ระบบองค์กรโรงเรียนที่กดเผยแพร่เว็บ -> ดึงแบบ CSV โดยระบุตัวแปรแผ่นงาน (&sheet=...) อย่างถูกต้องแม่นยำ
         url = `https://docs.google.com/spreadsheets/d/e/${spreadsheetId}/pub?output=csv&sheet=${encodeURIComponent(sheetName)}`;
       } else {
         // Mode B: ลิงก์ตารางปกติ -> ดึงแบบ JSON Gviz
