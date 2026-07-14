@@ -254,10 +254,18 @@ export default function App() {
       // 2. ดึงข้อมูลชุดล่าสุดแบบ Real-time จาก Firebase Firestore มาอัปเดตหน้าจอระบบสอบ
       try {
         console.log("🔥 กำลังอัปเดตรายชื่อและข้อสอบล่าสุดจากระบบคลาวด์ Firebase...");
-        const firestoreData = await pullAllFromFirestore();
-        
-        if (firestoreData) {
-          const { students: fStudents, exams: fExams, submissions: fSubmissions, settings: fSettings } = firestoreData;
+        // 🟢 ดึงข้อมูลแบบเจาะจง ไม่ดึง submissions ทั้งหมดมาดองให้ช้า
+        const { db } = await import("./lib/firebase");
+        const { collection, getDocs } = await import("firebase/firestore");
+
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        const fStudents = studentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
+
+        const examsSnapshot = await getDocs(collection(db, "exams"));
+        const fExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Exam[];
+
+        const fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
+        const fSettings = localSettings ? JSON.parse(localSettings) : null;
           
           if (fStudents && fStudents.length > 0) {
             setStudents(fStudents);
