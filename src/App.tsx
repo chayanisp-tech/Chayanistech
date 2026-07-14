@@ -277,8 +277,17 @@ export default function App() {
           console.error("❌ ดึงข้อมูลข้อสอบจาก Firestore ล้มเหลว:", examErr);
         }
 
-        // ประวัติ submissions และ settings ให้ใช้ตามความจำเครื่องไปก่อน เพื่อตัดปัญหาความหน่วงสะสม
-        const fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
+        let fSubmissions: Submission[] = [];
+        try {
+          // ดึงข้อมูลประวัติการส่งจาก Firestore เพื่ออัปเดตงานเขียนตอบล่าสุดและภาพวาดเขียน (Drawing)
+          const submissionsSnapshot = await getDocs(collection(db, "submissions"));
+          fSubmissions = submissionsSnapshot.docs.map(doc => ({ submissionId: doc.id, ...doc.data() })) as Submission[];
+          console.log(`✅ ดึงข้อมูลประวัติส่งข้อสอบสำเร็จ (${fSubmissions.length} รายการ)`);
+        } catch (subErr) {
+          console.error("❌ ดึงข้อมูลประวัติส่งข้อสอบจาก Firestore ล้มเหลว:", subErr);
+          fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
+        }
+
         const fSettings = localSettings ? JSON.parse(localSettings) : null;
           
         if (fStudents && fStudents.length > 0) {
@@ -607,6 +616,14 @@ export default function App() {
         setExams(firestoreData.exams);
         setSubmissions(firestoreData.submissions);
         if (firestoreData.settings) setSettings(firestoreData.settings);
+
+        // บันทึกลงในเครื่องเพื่อรักษาภาพวาดเขียน (Drawing) และข้อมูลที่ซิงค์แบบเต็มรูปแบบจาก Firestore
+        localStorage.setItem("exam_students", JSON.stringify(firestoreData.students));
+        localStorage.setItem("exam_exams", JSON.stringify(firestoreData.exams));
+        localStorage.setItem("exam_submissions", JSON.stringify(firestoreData.submissions));
+        if (firestoreData.settings) {
+          localStorage.setItem("exam_settings", JSON.stringify(firestoreData.settings));
+        }
       }
     } catch (err) {
       console.error(err);
