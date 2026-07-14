@@ -6,7 +6,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SUBMISSIONS,
 } from "./lib/mockData";
-import { initAuth, getAccessToken, logout, googleSignIn } from "./lib/firebase";
+import { initAuth, getAccessToken, logout, googleSignIn, db } from "./lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
 import {
   searchDatabaseSpreadsheet,
   createDatabaseSpreadsheet,
@@ -218,7 +219,7 @@ export default function App() {
     localStorage.setItem("exam_sync_status", JSON.stringify(clearedSync));
   };
 
- // ⚡ ระบบเปิดตัวแอปพลิเคชัน: ดึงข้อมูลด่วนจากคลาวด์ Firebase Firestore แทน Google Sheets
+  // ⚡ ระบบเปิดตัวแอปพลิเคชัน: ดึงข้อมูลด่วนจากคลาวด์ Firebase Firestore แทน Google Sheets
   useEffect(() => {
     testConnection(); // ทดสอบการเชื่อมต่อฐานข้อมูลเบื้องต้น
 
@@ -251,40 +252,39 @@ export default function App() {
         if (parsedSync.spreadsheetId) setActiveSheetId(parsedSync.spreadsheetId);
       }
 
-      // 2. ดึงข้อมูลชุดล่าสุดแบบ Real-time จาก Firebase Firestore มาอัปเดตหน้าจอระบบสอบ
+      // 2. ดึงข้อมูลชุดล่าสุดแบบ เร็วแรง จาก Firebase Firestore
       try {
         console.log("🔥 กำลังอัปเดตรายชื่อและข้อสอบล่าสุดจากระบบคลาวด์ Firebase...");
-        // 🟢 ดึงข้อมูลแบบเจาะจง ไม่ดึง submissions ทั้งหมดมาดองให้ช้า
-        const { db } = await import("./lib/firebase");
-        const { collection, getDocs } = await import("firebase/firestore");
-
+        
+        // ดึงเฉพาะคอลเลกชันนักเรียน
         const studentsSnapshot = await getDocs(collection(db, "students"));
         const fStudents = studentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
 
+        // ดึงเฉพาะคอลเลกชันข้อสอบ
         const examsSnapshot = await getDocs(collection(db, "exams"));
         const fExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Exam[];
 
+        // ประวัติ submissions และ settings ให้ใช้ตามความจำเครื่องไปก่อน เพื่อตัดปัญหาความหน่วงสะสม
         const fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
         const fSettings = localSettings ? JSON.parse(localSettings) : null;
           
-          if (fStudents && fStudents.length > 0) {
-            setStudents(fStudents);
-            localStorage.setItem("exam_students", JSON.stringify(fStudents));
-          }
-          if (fExams && fExams.length > 0) {
-            setExams(fExams);
-            localStorage.setItem("exam_exams", JSON.stringify(fExams));
-          }
-          if (fSubmissions && fSubmissions.length > 0) {
-            setSubmissions(fSubmissions);
-            localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
-          }
-          if (fSettings) {
-            setSettings(fSettings);
-            localStorage.setItem("exam_settings", JSON.stringify(fSettings));
-          }
-          console.log("⚡ อัปเดตข้อมูลห้องเรียนผ่าน Firebase สำเร็จ 100%");
+        if (fStudents && fStudents.length > 0) {
+          setStudents(fStudents);
+          localStorage.setItem("exam_students", JSON.stringify(fStudents));
         }
+        if (fExams && fExams.length > 0) {
+          setExams(fExams);
+          localStorage.setItem("exam_exams", JSON.stringify(fExams));
+        }
+        if (fSubmissions && fSubmissions.length > 0) {
+          setSubmissions(fSubmissions);
+          localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
+        }
+        if (fSettings) {
+          setSettings(fSettings);
+          localStorage.setItem("exam_settings", JSON.stringify(fSettings));
+        }
+        console.log("⚡ อัปเดตข้อมูลห้องเรียนผ่าน Firebase สำเร็จ 100%");
       } catch (e) {
         console.error("Firebase Initialization Failed:", e);
         setPublicDataError("ไม่สามารถเชื่อมต่อคลาวด์กลางได้ ระบบกำลังใช้ข้อมูลล่าสุดที่มีในเครื่องของนักเรียน");
