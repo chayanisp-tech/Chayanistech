@@ -627,20 +627,23 @@ const executeSubmitExam = async () => {
                   <span className="material-symbols-outlined text-[18px]">edit</span>
                   กลับไปทำต่อ
                 </button>
-                <button
-          onClick={executeSubmitExam}
-          disabled={!confirmSubmitChecked || isSubmitting}
-          className={`px-6 py-2.5 rounded-full font-bold text-sm transition-all flex items-center gap-1.5 shadow-md ${
-            confirmSubmitChecked && !isSubmitting
-              ? "bg-[#ba1a1a] hover:bg-[#a01616] text-white shadow-[#ba1a1a]/15 cursor-pointer"
-              : "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed"
-          }`}
-        >
-          <span className={`material-symbols-outlined text-[18px] ${isSubmitting ? "animate-spin" : ""}`}>
-            {isSubmitting ? "sync" : "send"}
-          </span>
-          {isSubmitting ? "กำลังส่งคำตอบขึ้นคลาวด์..." : "ยืนยันส่งข้อสอบและเสร็จสิ้น"}
-        </button>
+               <button
+                  type="button"
+                  onClick={() => {
+                    executeSubmitExam();
+                  }}
+                  disabled={!confirmSubmitChecked || isSubmitting}
+                  className={`px-6 py-2.5 rounded-full font-bold text-sm transition-all flex items-center gap-1.5 shadow-md ${
+                    confirmSubmitChecked && !isSubmitting
+                      ? "bg-[#ba1a1a] hover:bg-[#a01616] text-white shadow-[#ba1a1a]/15 cursor-pointer"
+                      : "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed"
+                  }`}
+                >
+                  <span className={`material-symbols-outlined text-[18px] ${isSubmitting ? "animate-spin" : ""}`}>
+                    {isSubmitting ? "sync" : "send"}
+                  </span>
+                  {isSubmitting ? "กำลังส่งคำตอบขึ้นคลาวด์..." : "ยืนยันส่งข้อสอบและเสร็จสิ้น"}
+                </button>
               </div>
             </div>
           </div>
