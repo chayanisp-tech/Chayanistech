@@ -196,22 +196,6 @@ export default function App() {
       setIsLoadingPublicData(false);
     }
   };
-        setSyncStatus(updatedSync);
-        localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
-        setActiveSheetId(cleanSheetId);
-        return true;
-      } else {
-        setPublicDataError("ไม่สามารถโหลดข้อสอบได้ กรุณาแชร์สิทธิ์เป็นทุกคนที่มีลิงก์มีสิทธิ์อ่าน");
-        return false;
-      }
-    } catch (err) {
-      console.error("Public fetch failed:", err);
-      setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด");
-      return false;
-    } finally {
-      setIsLoadingPublicData(false);
-    }
-  };
 
   const handleResetToDemo = () => {
     localStorage.removeItem("student_active_sheet_id");
