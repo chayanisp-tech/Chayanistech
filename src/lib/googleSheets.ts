@@ -349,7 +349,7 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
       const table = json.table;
       if (!table || !table.rows) return null;
 
-      // Extract rows
+      // Extract rows safely
       return table.rows.map((r: any) => {
         return r.c ? r.c.map((cell: any) => cell?.v ?? "") : [];
       });
@@ -365,16 +365,23 @@ export async function fetchPublicSheetsData(spreadsheetId: string): Promise<{
     const students: Student[] = [];
     if (studentRows && studentRows.length > 0) {
       for (const row of studentRows) {
-        if (row[0]) {
+        if (row[0] !== undefined && row[0] !== null && row[0] !== "") {
           const idStr = row[0].toString().trim();
-          // Skip header row if returned
-          if (idStr.toLowerCase().includes("id") || idStr.includes("รหัส")) {
+          
+          // ข้ามแถวหัวตารางอย่างยืดหยุ่น
+          if (
+            idStr.toLowerCase().includes("id") || 
+            idStr.includes("รหัส") || 
+            idStr === ""
+          ) {
             continue;
           }
+          
           students.push({
             id: idStr,
             name: row[1]?.toString() || "",
             className: row[2]?.toString() || "",
+            department: row[2]?.toString() || "", // 🛠️ PATCH: บังคับใส่ทั้งสองชื่อคีย์เพื่อความเข้ากันได้ 100%
           });
         }
       }
