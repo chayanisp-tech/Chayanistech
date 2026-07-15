@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Submission, SyncStatus, Exam, Question, Student } from "../types";
 
 interface TeacherGradingProps {
@@ -21,57 +21,89 @@ export default function TeacherGrading({
   onTriggerSync,
 }: TeacherGradingProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClassroom, setSelectedClassroom] = useState("all");
+  const [selectedExamId, setSelectedExamId] = useState<string>("");
+  const [selectedClassroom, setSelectedClassroom] = useState<string>("");
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
 
-  // Extract unique classrooms
-  const classrooms = Array.from(new Set(students.map((s) => s.className))).filter(Boolean).sort();
+  // 1. ดึงรายชื่อห้องเรียนทั้งหมดจากฐานข้อมูลนักเรียน
+  const classrooms = useMemo(() => {
+    return Array.from(new Set(students.map((s) => s.className))).filter(Boolean).sort();
+  }, [students]);
 
-  const filtered = submissions.filter(
-    (s) => {
-      const matchSearch =
-        s.studentId.includes(searchTerm) ||
-        s.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.examTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.submissionId.includes(searchTerm);
-      
-      const matchClass = selectedClassroom === "all" || s.studentClassName === selectedClassroom;
-      
-      return matchSearch && matchClass;
-    }
-  );
+  // 2. จัดการสร้างตารางใบรายชื่อ (Roster) โดยเอาข้อมูลนักเรียนในห้องนั้นเป็นตัวตั้ง
+  const rosterData = useMemo(() => {
+    if (!selectedClassroom || !selectedExamId) return [];
 
-  // Sort: First by classroom (if all), then by database order
-  const sortedSubmissions = [...filtered].sort((a, b) => {
-    if (selectedClassroom === "all") {
-      const classCompare = a.studentClassName.localeCompare(b.studentClassName, "th-TH");
-      if (classCompare !== 0) return classCompare;
-    }
+    const matchingExam = exams.find((e) => e.id === selectedExamId);
+    if (!matchingExam) return [];
 
-    const idxA = students.findIndex((s) => s.id === a.studentId);
-    const idxB = students.findIndex((s) => s.id === b.studentId);
+    // กรองนักเรียนเฉพาะห้องที่เลือก และเรียงลำดับตามฐานข้อมูล (ตามลำดับ Index ใน Sheets)
+    const classroomStudents = students.filter((s) => s.className === selectedClassroom);
 
-    if (idxA !== -1 && idxB !== -1) {
-      return idxA - idxB;
-    }
-    if (idxA !== -1) return -1;
-    if (idxB !== -1) return 1;
+    return classroomStudents.map((student) => {
+      // ค้นหาประวัติการส่งข้อสอบของนักเรียนคนนี้ในวิชานี้ (เอาใบ ล่าสุด เผื่อมีส่งซ้ำ)
+      const studentSubmissions = submissions
+        .filter((sub) => sub.studentId === student.id && sub.examId === selectedExamId)
+        .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
 
-    return a.studentName.localeCompare(b.studentName, "th-TH");
-  });
+      const submission = studentSubmissions.length > 0 ? studentSubmissions[0] : null;
 
+      // คำนวณแยกคะแนน ปรนัย และ อัตนัย ออกมาจากข้อมูลคำตอบดิบ
+      let objectiveScore = 0;
+      let subjectiveScore = 0;
+      let totalMaxObjective = 0;
+      let totalMaxSubjective = 0;
+
+      matchingExam.questions.forEach((q) => {
+        if (q.type === "subjective") {
+          totalMaxSubjective += q.points;
+        } else {
+          totalMaxObjective += q.points;
+        }
+
+        if (submission && submission.answers) {
+          const ans = submission.answers[q.id];
+          if (q.type === "subjective") {
+            if (ans && typeof ans === "object" && typeof ans.assignedScore === "number") {
+              subjectiveScore += ans.assignedScore;
+            }
+          } else {
+            if (ans !== undefined && typeof ans !== "object" && Number(ans) === Number(q.answerIndex)) {
+              objectiveScore += q.points;
+            }
+          }
+        }
+      });
+
+      // ใช้ระบบค้นหาเพิ่มเติม (Search Filter) เผื่อครูต้องการหาชื่อเฉพาะเจาะจงในห้อง
+      const matchesSearch =
+        searchTerm === "" ||
+        student.id.includes(searchTerm) ||
+        student.name.toLowerCase().includes(searchTerm.toLowerCase());
+
+      return {
+        student,
+        submission,
+        objectiveScore,
+        subjectiveScore,
+        totalScore: submission ? submission.score : 0,
+        totalMaxObjective,
+        totalMaxSubjective,
+        matchesSearch,
+      };
+    }).filter(item => item.matchesSearch);
+  }, [selectedClassroom, selectedExamId, students, submissions, exams, searchTerm]);
+
+  // ฟังก์ชันอัปเดตคะแนนอัตนัย (คงโครงสร้างเดิมเพื่อให้ซิงค์กับระบบคลาวด์ได้สมบูรณ์)
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
+    const currentAnsItem = typeof currentAnswers[qId] === "object" ? { ...currentAnswers[qId] } : {};
     
-    // Update the answer item with the new score
-    const currentAnsItem = currentAnswers[qId] || {};
     currentAnswers[qId] = {
       ...currentAnsItem,
       assignedScore: points,
     };
 
-    // Re-calculate the submission's overall score
-    // Find matching exam
     const matchingExam = exams.find((e) => e.id === sub.examId);
     let newScore = 0;
     
@@ -79,13 +111,12 @@ export default function TeacherGrading({
       matchingExam.questions.forEach((q) => {
         if (q.type === "subjective") {
           const ans = currentAnswers[q.id];
-          if (ans && typeof ans.assignedScore === "number") {
+          if (ans && typeof ans === "object" && typeof ans.assignedScore === "number") {
             newScore += ans.assignedScore;
           }
         } else {
-          // Multiple choice
           const ans = currentAnswers[q.id];
-          if (ans !== undefined) {
+          if (ans !== undefined && typeof ans !== "object") {
             if (Number(ans) === Number(q.answerIndex)) {
               newScore += q.points;
             }
@@ -93,8 +124,7 @@ export default function TeacherGrading({
         }
       });
     } else {
-      // Fallback if exam can't be found
-      newScore = sub.score; // keep as-is, just update the detail
+      newScore = sub.score;
     }
 
     const updatedSubmission: Submission = {
@@ -111,9 +141,9 @@ export default function TeacherGrading({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">การให้คะแนนและสถิติ</h1>
+          <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ระบบสมุดคะแนนรายห้อง</h1>
           <p className="text-sm text-[#59413f] mt-1">
-            รายงานผลการทำข้อสอบของนักเรียน รายละเอียดคะแนน และสถานะการบันทึกประวัติการส่งข้อสอบ สามารถคลิกแต่ละแถวเพื่อดูรายละเอียดคำตอบและให้คะแนนข้อสอบอัตนัยได้
+            เลือกวิชาและชั้นเรียนเพื่อตรวจคะแนนอัตนัย เช็คชื่อคนเข้าสอบ และนำข้อมูลไปลงคะแนนออกเกรดได้ทันที
           </p>
         </div>
         
@@ -124,305 +154,257 @@ export default function TeacherGrading({
             className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-[#8e171c]/10 cursor-pointer disabled:opacity-75 shrink-0"
           >
             <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
-            <span>{syncStatus.isSyncing ? "กำลังบันทึกคะแนนลงไดรฟ์..." : "ซิงค์คะแนนลง Google Drive"}</span>
+            <span>{syncStatus.isSyncing ? "กำลังบันทึกคะแนนลงไดrฟ์..." : "ส่งคะแนนเข้า Google Sheets"}</span>
           </button>
         )}
       </div>
 
-      {/* Main Table Grid */}
-      <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm">
-        {/* Search & Classroom Filters */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 mb-6">
-          <div className="flex items-center gap-3 relative w-full sm:max-w-md">
-            <span className="material-symbols-outlined absolute left-4 text-[#8c706e] text-[18px]">
-              search
-            </span>
+      {/* ตัวคัดกรองหลัก (Filters) */}
+      <div className="bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
+        <div>
+          <label className="block text-xs font-bold text-[#59413f] mb-2">1. เลือกวิชา / ชุดข้อสอบ:</label>
+          <select
+            value={selectedExamId}
+            onChange={(e) => {
+              setSelectedExamId(e.target.value);
+              setExpandedSubmissionId(null);
+            }}
+            className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
+          >
+            <option value="">-- กรุณาเลือกวิชา --</option>
+            {exams.map((e) => (
+              <option key={e.id} value={e.id}>{e.title}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-[#59413f] mb-2">2. เลือกชั้นเรียน:</label>
+          <select
+            value={selectedClassroom}
+            onChange={(e) => {
+              setSelectedClassroom(e.target.value);
+              setExpandedSubmissionId(null);
+            }}
+            className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
+            disabled={!selectedExamId}
+          >
+            <option value="">-- กรุณาเลือกห้องเรียน --</option>
+            {classrooms.map((c) => (
+              <option key={c} value={c}>ห้อง {c}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-[#59413f] mb-2">ค้นหารายชื่อในห้อง (ไม่บังคับ):</label>
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-4 top-2.5 text-[#8c706e] text-[18px]">search</span>
             <input
               type="text"
-              placeholder="ค้นหาด้วยรหัสนักเรียน, ชื่อ หรือวิชาที่สอบ..."
+              placeholder="พิมพ์ชื่อหรือรหัส..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 rounded-full border border-[#e0bfbc] outline-none text-sm text-[#251817] focus:border-[#8e171c]"
+              className="w-full pl-11 pr-4 py-2 border border-[#e0bfbc] rounded-xl text-xs text-[#251817] outline-none focus:border-[#8e171c]"
+              disabled={!selectedClassroom}
             />
           </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <label htmlFor="classSelect" className="text-xs font-bold text-[#59413f] whitespace-nowrap">
-              แยกตามห้องเรียน:
-            </label>
-            <select
-              id="classSelect"
-              value={selectedClassroom}
-              onChange={(e) => setSelectedClassroom(e.target.value)}
-              className="px-4 py-2 border border-[#e0bfbc] rounded-full text-xs font-bold bg-[#fff8f7] text-[#8e171c] outline-none focus:border-[#8e171c] cursor-pointer"
-            >
-              <option value="all">แสดงทั้งหมด (เรียงตามห้อง)</option>
-              {classrooms.map((c) => (
-                <option key={c} value={c}>
-                  ห้อง {c}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
+      </div>
 
-        {/* Scores Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-[#e0bfbc]/30 text-xs font-bold text-[#8c706e] bg-[#fff8f7]">
-                <th className="py-3 px-4">รหัสการส่ง</th>
-                <th className="py-3 px-4">นักเรียน</th>
-                <th className="py-3 px-4">ชั้นเรียน</th>
-                <th className="py-3 px-4">วิชาที่สอบ</th>
-                <th className="py-3 px-4 text-center">สัดส่วนคำตอบ</th>
-                <th className="py-3 px-4 text-right">คะแนนสอบ</th>
-                <th className="py-3 px-4 text-center">เวลาส่งสอบ</th>
-                <th className="py-3 px-4 text-center">การจัดการ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e0bfbc]/20">
-              {sortedSubmissions.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-[#59413f]">
-                    ยังไม่มีรายงานการทำข้อสอบตามตัวกรองนี้
-                  </td>
+      {/* Main Table Grid */}
+      <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm">
+        {!selectedExamId || !selectedClassroom ? (
+          <div className="text-center py-12 text-[#59413f] font-medium border-2 border-dashed border-[#e0bfbc]/30 rounded-2xl">
+            💡 กรุณาเลือก "วิชา" และ "ชั้นเรียน" ด้านบนเพื่อแสดงสมุดรายชื่อนักเรียนตามลำดับเลขที่
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#e0bfbc]/30 text-xs font-bold text-[#8c706e] bg-[#fff8f7]">
+                  <th className="py-3 px-4 w-24">รหัส / เลขที่</th>
+                  <th className="py-3 px-4">ชื่อ-นามสกุล</th>
+                  <th className="py-3 px-4 text-center">สถานะสอบ</th>
+                  <th className="py-3 px-4 text-center">คะแนนปรนัย (ระบบ)</th>
+                  <th className="py-3 px-4 text-center">คะแนนอัตนัย (ครู)</th>
+                  <th className="py-3 px-4 text-right bg-[#ffe9e7]/30">คะแนนรวมสุทธิ</th>
+                  <th className="py-3 px-4 text-center">การจัดการ</th>
                 </tr>
-              ) : (
-                sortedSubmissions.map((sub) => {
-                  const isPerfect = sub.score === sub.totalPoints;
-                  const isExpanded = expandedSubmissionId === sub.submissionId;
-                  const matchingExam = exams.find((e) => e.id === sub.examId);
+              </thead>
+              <tbody className="divide-y divide-[#e0bfbc]/20">
+                {rosterData.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-[#59413f]">
+                      ไม่พบข้อมูลนักเรียนในเงื่อนไขที่เลือก
+                    </td>
+                  </tr>
+                ) : (
+                  rosterData.map(({ student, submission, objectiveScore, subjectiveScore, totalScore, totalMaxObjective, totalMaxSubjective }) => {
+                    const hasSubmitted = !!submission;
+                    const isExpanded = submission ? expandedSubmissionId === submission.submissionId : false;
+                    const matchingExam = exams.find((e) => e.id === selectedExamId);
 
-                  return (
-                    <React.Fragment key={sub.submissionId}>
-                      <tr className={`hover:bg-[#fff8f7] transition-all text-xs ${isExpanded ? "bg-[#ffe9e7]/10" : ""}`}>
-                        <td className="py-3 px-4 font-mono font-bold text-[#8c706e]">
-                          {sub.submissionId}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-[#251817]">{sub.studentName}</div>
-                          <div className="text-[10px] text-[#8c706e] font-mono">ID: {sub.studentId}</div>
-                        </td>
-                        <td className="py-3 px-4 font-medium text-[#59413f]">{sub.studentClassName}</td>
-                        <td className="py-3 px-4 font-bold text-[#251817]">{sub.examTitle}</td>
-                        <td className="py-3 px-4 text-center text-[#59413f]">
-                          {sub.answeredCount} / {sub.totalQuestions} ข้อ
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <span className={`font-black text-sm ${isPerfect ? "text-[#8e171c]" : "text-[#8f4a46]"}`}>
-                            {sub.score}
-                          </span>
-                          <span className="text-[10px] text-[#8c706e] font-bold"> / {sub.totalPoints}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center font-semibold text-[#59413f]">
-                          {new Date(sub.submittedAt).toLocaleTimeString("th-TH", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Expand toggle */}
-                            <button
-                              onClick={() => setExpandedSubmissionId(isExpanded ? null : sub.submissionId)}
-                              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                                isExpanded ? "bg-[#8e171c] text-white" : "hover:bg-[#ffe9e7] text-[#8e171c] bg-[#ffe9e7]/50"
-                              }`}
-                              title="ดูรายละเอียดข้อสอบและให้คะแนน"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">
-                                {isExpanded ? "expand_less" : "analytics"}
+                    return (
+                      <React.Fragment key={student.id}>
+                        <tr className={`hover:bg-[#fff8f7] transition-all text-xs ${isExpanded ? "bg-[#ffe9e7]/10" : ""} ${!hasSubmitted ? "opacity-60" : ""}`}>
+                          <td className="py-4 px-4 font-mono font-bold text-[#8c706e]">
+                            {student.id}
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="font-bold text-[#251817] text-sm">{student.name}</div>
+                            {hasSubmitted && <div className="text-[9px] text-gray-400 font-mono">อนุมัติส่ง: {submission.submissionId}</div>}
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            {hasSubmitted ? (
+                              <span className="inline-block px-2.5 py-1 bg-green-100 text-green-800 font-bold rounded-full text-[10px]">
+                                ส่งแล้ว
                               </span>
-                            </button>
+                            ) : (
+                              <span className="inline-block px-2.5 py-1 bg-gray-100 text-gray-500 rounded-full text-[10px]">
+                                ยังไม่เข้าสอบ
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4 text-center font-medium text-gray-600">
+                            {hasSubmitted ? `${objectiveScore} / ${totalMaxObjective}` : "-"}
+                          </td>
+                          <td className="py-4 px-4 text-center font-bold text-blue-600">
+                            {hasSubmitted ? `${subjectiveScore} / ${totalMaxSubjective}` : "-"}
+                          </td>
+                          <td className="py-4 px-4 text-right bg-[#ffe9e7]/10">
+                            {hasSubmitted ? (
+                              <>
+                                <span className="font-black text-sm text-[#8e171c]">{totalScore}</span>
+                                <span className="text-[10px] text-[#8c706e] font-bold"> / {submission.totalPoints}</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4">
+                            {hasSubmitted ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => setExpandedSubmissionId(isExpanded ? null : submission.submissionId)}
+                                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                    isExpanded ? "bg-[#8e171c] text-white" : "bg-[#ffe9e7] text-[#8e171c] hover:bg-[#ffdad7]"
+                                  }`}
+                                  title="ดูคำตอบและตรวจอัตนัย"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">edit_note</span>
+                                  <span>{isExpanded ? "ปิด" : "ตรวจอัตนัย"}</span>
+                                </button>
 
-                            {/* Delete submission */}
-                            <button
-                              onClick={() => {
-                                if (window.confirm("คุณต้องการลบสิทธิ์หรือบันทึกผลคะแนนประวัติการส่งข้อสอบรายการนี้หรือไม่?")) {
-                                  onDeleteSubmission(sub.submissionId);
-                                }
-                              }}
-                              className="w-7 h-7 rounded-full hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors cursor-pointer"
-                              title="ลบผลการส่ง"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* COLLAPSIBLE DETAILED VIEW */}
-                      {isExpanded && (
-                        <tr className="bg-[#fffdfd] border-l-4 border-l-[#8e171c]">
-                          <td colSpan={8} className="py-5 px-6 md:px-8 border-b border-[#e0bfbc]/30">
-                            <div className="space-y-6">
-                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-[#e0bfbc]/20 pb-4 gap-2">
-                                <div className="space-y-0.5">
-                                  <h5 className="font-bold text-sm text-[#8e171c] flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-[18px]">assignment_ind</span>
-                                    รายละเอียดคำตอบของ {sub.studentName} ({sub.studentId})
-                                  </h5>
-                                  <p className="text-[10px] text-[#59413f] font-semibold">
-                                    ชั้นเรียน: {sub.studentClassName} • วิชา: {sub.examTitle}
-                                  </p>
-                                </div>
-                                <span className="text-[10px] font-bold text-[#8c706e] bg-[#fff1f0] px-3 py-1 rounded-full border border-[#e0bfbc]/30 font-mono">
-                                  ส่งเมื่อ: {new Date(sub.submittedAt).toLocaleString("th-TH")}
-                                </span>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`คุณต้องการลบประวัติการส่งของ ${student.name} เพื่อให้เด็กเข้าสอบใหม่ใช่หรือไม่?`)) {
+                                      onDeleteSubmission(submission.submissionId);
+                                    }
+                                  }}
+                                  className="w-7 h-7 rounded-full hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors cursor-pointer"
+                                  title="ลบสิทธิ์/ผลการส่ง"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                                </button>
                               </div>
-
-                              {/* Questions Details Loop */}
-                              {matchingExam ? (
-                                <div className="space-y-5">
-                                  {matchingExam.questions.map((q, qIdx) => {
-                                    const studentAns = sub.answers ? sub.answers[q.id] : undefined;
-                                    const isSubjective = q.type === "subjective";
-
-                                    return (
-                                      <div key={q.id} className="p-4 rounded-2xl border border-[#e0bfbc]/40 bg-white space-y-3 shadow-sm hover:border-[#8e171c]/20 transition-all">
-                                        <div className="flex justify-between items-start gap-4">
-                                          <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-[10px] font-bold text-[#8c706e] tracking-wider uppercase">
-                                                ข้อ {qIdx + 1}
-                                              </span>
-                                              {isSubjective ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#ffe9e7] text-[#8e171c] font-black rounded text-[9px] uppercase">
-                                                  <span className="material-symbols-outlined text-[10px]">edit_note</span>
-                                                  อัตนัย
-                                                </span>
-                                              ) : (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#eaf5ea] text-[#2b6a2b] font-black rounded text-[9px] uppercase">
-                                                  <span className="material-symbols-outlined text-[10px]">list_alt</span>
-                                                  ปรนัย (5 ตัวเลือก)
-                                                </span>
-                                              )}
-                                            </div>
-                                            <p className="font-bold text-[#251817] text-xs md:text-sm">{q.text}</p>
-                                            {q.imageUrl && (
-                                              <div className="my-2 max-w-[150px] border border-[#e0bfbc] rounded-lg overflow-hidden bg-white">
-                                                <img src={q.imageUrl} alt="คำถามภาพประกอบ" className="w-full object-cover max-h-[100px]" referrerPolicy="no-referrer" />
-                                              </div>
-                                            )}
-                                          </div>
-                                          <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full shrink-0">
-                                            {q.points} คะแนน
-                                          </span>
-                                        </div>
-
-                                        {/* Rendering answers based on type */}
-                                        {isSubjective ? (
-                                          <div className="space-y-4 pt-2 border-t border-[#e0bfbc]/10">
-                                            {/* Text answer */}
-                                            <div className="space-y-1 bg-[#fffbfb] p-3 rounded-xl border border-[#e0bfbc]/25 shadow-inner">
-                                              <span className="text-[10px] font-bold text-[#8c706e] flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-[12px]">keyboard</span>
-                                                ข้อความที่พิมพ์ตอบ:
-                                              </span>
-                                              <p className="text-xs text-[#251817] whitespace-pre-wrap font-medium leading-relaxed">
-                                                {studentAns?.text ? studentAns.text : <span className="text-gray-400 italic font-normal">ไม่มีการพิมพ์ข้อความตอบ</span>}
-                                              </p>
-                                            </div>
-
-                                            {/* Drawing Image */}
-                                            <div className="space-y-1.5">
-                                              <span className="text-[10px] font-bold text-[#8c706e] flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-[12px]">draw</span>
-                                                รูปภาพวาดส่งประกอบคำตอบ:
-                                              </span>
-                                              {studentAns?.drawing ? (
-                                                <div className="border border-[#e0bfbc]/30 rounded-xl bg-white p-2.5 w-full max-w-md shadow-sm">
-                                                  <img
-                                                    src={studentAns.drawing}
-                                                    alt={`ภาพวาดข้อ ${qIdx + 1}`}
-                                                    className="w-full h-auto object-contain max-h-64 rounded-lg"
-                                                    referrerPolicy="no-referrer"
-                                                  />
-                                                </div>
-                                              ) : (
-                                                <p className="text-xs text-gray-400 italic p-3 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                                  ไม่มีภาพวาดส่งประกอบในข้อนี้
-                                                </p>
-                                              )}
-                                            </div>
-
-                                            {/* Teacher Grading Panel */}
-                                            <div className="bg-[#fff8f7] border border-[#ffdad7] p-3.5 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 mt-4">
-                                              <div className="space-y-0.5">
-                                                <span className="text-[10px] font-bold text-[#8e171c] flex items-center gap-1">
-                                                  <span className="material-symbols-outlined text-[12px]">grade</span>
-                                                  ลงคะแนนโดยผู้สอน (Teacher Grading):
-                                                </span>
-                                                <p className="text-xs text-[#59413f]">
-                                                  คะแนนที่ได้ปัจจุบัน: <span className="font-black text-[#8e171c] text-sm">{studentAns?.assignedScore !== undefined ? studentAns.assignedScore : 0}</span> จากคะแนนเต็ม {q.points} คะแนน
-                                                </p>
-                                              </div>
-                                              
-                                              {/* Score options container */}
-                                              <div className="flex flex-wrap gap-1">
-                                                {Array.from({ length: q.points + 1 }).map((_, pt) => {
-                                                  const isCurrentSelected = studentAns?.assignedScore === pt || (studentAns?.assignedScore === undefined && pt === 0);
-                                                  return (
-                                                    <button
-                                                      key={pt}
-                                                      onClick={() => handleUpdateSubjectiveScore(sub, q.id, pt)}
-                                                      className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center cursor-pointer transition-all ${
-                                                        isCurrentSelected
-                                                          ? "bg-[#8e171c] text-white font-black scale-110 shadow-sm"
-                                                          : "bg-white text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
-                                                      }`}
-                                                    >
-                                                      {pt}
-                                                    </button>
-                                                  );
-                                                })}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div className="space-y-2 pt-2 border-t border-[#e0bfbc]/10">
-                                            {/* Multiple choice values */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-medium">
-                                              <div className="p-2.5 rounded-xl bg-[#eaf5ea] text-[#2b6a2b] flex items-center gap-2">
-                                                <span className="material-symbols-outlined text-[16px] shrink-0">check_circle</span>
-                                                <span className="leading-tight">คำตอบที่ถูกต้อง: <b>ตัวเลือก {["A", "B", "C", "D", "E"][q.answerIndex]}</b> ({q.options[q.answerIndex]})</span>
-                                              </div>
-                                              <div className={`p-2.5 rounded-xl flex items-center gap-2 ${
-                                                studentAns !== undefined && Number(studentAns) === Number(q.answerIndex)
-                                                  ? "bg-[#eaf5ea] text-[#2b6a2b]"
-                                                  : studentAns === undefined
-                                                  ? "bg-gray-100 text-gray-500"
-                                                  : "bg-[#fff0ef] text-[#ba1a1a]"
-                                              }`}>
-                                                <span className="material-symbols-outlined text-[16px] shrink-0">
-                                                  {studentAns !== undefined && Number(studentAns) === Number(q.answerIndex) ? "check" : studentAns === undefined ? "help" : "close"}
-                                                </span>
-                                                <span className="leading-tight">
-                                                  คำตอบของนักเรียน: {studentAns !== undefined ? <span><b>ตัวเลือก {["A", "B", "C", "D", "E"][studentAns]}</b> ({q.options[studentAns]})</span> : <span className="italic text-gray-400">ไม่ได้ระบุคำตอบ</span>}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-400 italic py-4">ไม่พบรายละเอียดของชุดข้อสอบนี้ในระบบ (ชุดข้อสอบอาจถูกลบไปแล้ว)</p>
-                              )}
-                            </div>
+                            ) : (
+                              <div className="text-center text-gray-400 text-[11px] italic">ไม่มีข้อมูลการส่ง</div>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+
+                        {/* หน้าต่างขยายสำหรับดึงคำตอบอัตนัยมาให้คุณครูตรวจ */}
+                        {isExpanded && submission && (
+                          <tr className="bg-[#fffdfd] border-l-4 border-l-[#8e171c]">
+                            <td colSpan={7} className="py-5 px-6 md:px-8 border-b border-[#e0bfbc]/30">
+                              <div className="space-y-4">
+                                <div className="border-b border-[#e0bfbc]/20 pb-3 flex justify-between items-center">
+                                  <h5 className="font-bold text-xs text-[#8e171c] flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-[16px]">assignment_ind</span>
+                                    กระดาษคำตอบอัตนัยของ: {student.name} ({student.id})
+                                  </h5>
+                                  <span className="text-[10px] text-gray-400 font-mono">เวลาส่ง: {new Date(submission.submittedAt).toLocaleString("th-TH")}</span>
+                                </div>
+
+                                {matchingExam ? (
+                                  <div className="space-y-4">
+                                    {matchingExam.questions.filter(q => q.type === "subjective").map((q, sIdx) => {
+                                      const studentAns = submission.answers ? submission.answers[q.id] : undefined;
+                                      const textAns = studentAns && typeof studentAns === "object" ? studentAns.text : "";
+                                      const drawingAns = studentAns && typeof studentAns === "object" ? studentAns.drawing : "";
+                                      const assignedScore = studentAns && typeof studentAns === "object" ? studentAns.assignedScore : 0;
+
+                                      return (
+                                        <div key={q.id} className="p-4 rounded-xl border border-[#e0bfbc]/40 bg-white space-y-3 shadow-sm">
+                                          <div className="flex justify-between items-start gap-4">
+                                            <div>
+                                              <span className="text-[10px] font-bold text-[#8e171c] bg-[#ffe9e7] px-2 py-0.5 rounded mr-2">ข้อสอบอัตนัยที่ {sIdx + 1}</span>
+                                              <p className="font-bold text-[#251817] text-xs mt-1">{q.text}</p>
+                                            </div>
+                                            <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full shrink-0">เต็ม {q.points} คะแนน</span>
+                                          </div>
+
+                                          {/* คำตอบแบบพิมพ์ */}
+                                          <div className="bg-[#fffbfb] p-3 rounded-xl border border-[#e0bfbc]/25 shadow-inner">
+                                            <span className="text-[9px] font-bold text-[#8c706e] block mb-1">✍️ ข้อความที่นักเรียนพิมพ์ตอบ:</span>
+                                            <p className="text-xs text-[#251817] whitespace-pre-wrap font-medium">
+                                              {textAns ? textAns : <span className="text-gray-400 italic font-normal">ไม่ได้พิมพ์คำตอบข้อความไว้</span>}
+                                            </p>
+                                          </div>
+
+                                          {/* คำตอบแบบรูปวาด */}
+                                          {drawingAns && (
+                                            <div className="space-y-1">
+                                              <span className="text-[9px] font-bold text-[#8c706e] block">🎨 ภาพวาด/ลายมือเขียนส่ง:</span>
+                                              <div className="border border-[#e0bfbc]/30 rounded-xl bg-white p-2 w-full max-w-sm shadow-sm">
+                                                <img src={drawingAns} alt="ภาพวาดคำตอบนักเรียน" className="w-full h-auto object-contain max-h-48 rounded-lg" referrerPolicy="no-referrer" />
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* เมนูให้คะแนนของคุณครู */}
+                                          <div className="bg-[#fff8f7] border border-[#ffdad7] p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <div>
+                                              <span className="text-[10px] font-bold text-[#8e171c] block">กรอก/แก้ไข คะแนนข้อนี้:</span>
+                                              <span className="text-xs text-gray-500">ได้ปัจจุบัน: <b className="text-[#8e171c] text-sm">{assignedScore}</b> คะแนน</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                              {Array.from({ length: q.points + 1 }).map((_, pt) => {
+                                                const isSelected = assignedScore === pt;
+                                                return (
+                                                  <button
+                                                    key={pt}
+                                                    onClick={() => handleUpdateSubjectiveScore(submission, q.id, pt)}
+                                                    className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center cursor-pointer transition-all ${
+                                                      isSelected ? "bg-[#8e171c] text-white scale-110 shadow-md" : "bg-white text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
+                                                    }`}
+                                                  >
+                                                    {pt}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-red-500 italic">ไม่พบโครงสร้างชุดข้อสอบในระบบ</p>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
