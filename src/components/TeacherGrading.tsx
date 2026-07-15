@@ -25,7 +25,7 @@ export default function TeacherGrading({
   const [selectedClassroom, setSelectedClassroom] = useState<string>("");
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
   
-  // 🔥 เพิ่มระบบเซฟคะแนนลงกล่องความจำจำลองในหน้านี้ เพื่อกันคะแนนรีเซ็ตตอนสลับคน
+  // เพิ่มระบบเซฟคะแนนลงกล่องความจำจำลองในหน้านี้ เพื่อกันคะแนนรีเซ็ตตอนสลับคน
   const [localUpdates, setLocalUpdates] = useState<Record<string, Submission>>({});
 
   // 1. ดึงรายชื่อห้องเรียนทั้งหมด
@@ -49,7 +49,7 @@ export default function TeacherGrading({
 
       let submission = studentSubmissions.length > 0 ? studentSubmissions[0] : null;
 
-      // 🌟 ดึงข้อมูลจากกล่องความจำชั่วคราวมาทับ (ถ้ามีตัวที่ครูเพิ่งกดตรวจสดๆ ร้อนๆ)
+      // ดึงข้อมูลจากกล่องความจำชั่วคราวมาทับ (ถ้ามีตัวที่ครูเพิ่งกดตรวจสดๆ ร้อนๆ)
       if (submission && localUpdates[submission.submissionId]) {
         submission = localUpdates[submission.submissionId];
       }
@@ -98,6 +98,47 @@ export default function TeacherGrading({
     }).filter(item => item.matchesSearch);
   }, [selectedClassroom, selectedExamId, students, submissions, exams, searchTerm, localUpdates]);
 
+  // 🔥 ฟังก์ชันสำหรับดาวน์โหลดข้อมูลคะแนนสรุปแยกรายวิชาและรายห้อง (ออกเป็นไฟล์ CSV รองรับภาษาไทย)
+  const handleDownloadExcelCSV = () => {
+    if (rosterData.length === 0) return;
+
+    const matchingExam = exams.find((e) => e.id === selectedExamId);
+    const examTitle = matchingExam ? matchingExam.title : "ไม่ระบุวิชา";
+    
+    // 1. ใส่ UTF-8 BOM (\uFEFF) เพื่อให้ Excel เปิดภาษาไทยได้ไม่เป็นต่างด้าว
+    let csvContent = "\uFEFF";
+    
+    // 2. สร้างหัวคอลัมน์ตามที่คุณครูกำหนด
+    csvContent += "ลำดับ,รหัสนักเรียน,ชื่อสกุล,คะแนนเต็ม,คะแนนสอบที่ได้\n";
+    
+    // 3. วนลูปใส่ข้อมูลนักเรียนเรียงตามเลขที่
+    rosterData.forEach((item, index) => {
+      const rowNumber = index + 1;
+      const studentId = item.student.id;
+      // ป้องกันเครื่องหมายจุลภาค (,) ในชื่อนักเรียนหลุดโครงสร้าง CSV ด้วยการครอบเครื่องหมายคำพูด double quotes
+      const studentName = `"${item.student.name.replace(/"/g, '""')}"`;
+      const maxScore = item.totalMaxObjective + item.totalMaxSubjective;
+      const finalScore = item.submission ? item.totalScore : 0; // ถ้ายังไม่สอบให้เป็น 0 คะแนน
+
+      csvContent += `${rowNumber},${studentId},${studentName},${maxScore},${finalScore}\n`;
+    });
+
+    // 4. กระบวนการยิงไฟล์ดาวน์โหลดไปยังเบราว์เซอร์ของคุณครู
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    // ตั้งชื่อไฟล์ เช่น คะแนน_วิชาคณิตศาสตร์_ห้อง_ม.4-7.csv
+    const safeRoomName = selectedClassroom.replace(/[\/\\]/g, "-");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `คะแนน_${examTitle}_ห้อง_${safeRoomName}.csv`);
+    link.style.visibility = "hidden";
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // ฟังก์ชันอัปเดตคะแนนอัตนัย
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
@@ -137,7 +178,7 @@ export default function TeacherGrading({
       answers: currentAnswers,
     };
 
-    // 🌟 ล็อกคะแนนเข้ากล่องความจำจำลองในหน้านี้ทันที การันตีคะแนนไม่หายเมื่อกดสลับคน
+    // ล็อกคะแนนเข้ากล่องความจำจำลองในหน้านี้ทันที การันตีคะแนนไม่หายเมื่อกดสลับคน
     setLocalUpdates((prev) => ({
       ...prev,
       [sub.submissionId]: updatedSubmission,
@@ -160,10 +201,7 @@ export default function TeacherGrading({
         
         {syncStatus.spreadsheetId && (
           <button
-            onClick={() => {
-              onTriggerSync();
-              // เมื่อกดซิงค์สำเร็จ สามารถปล่อยให้ระบบแม่เคลียร์ตัวแปรได้ตามปกติ
-            }}
+            onClick={onTriggerSync}
             disabled={syncStatus.isSyncing}
             className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-[#8e171c]/10 cursor-pointer disabled:opacity-75 shrink-0"
           >
@@ -228,8 +266,24 @@ export default function TeacherGrading({
         </div>
       </div>
 
-      {/* Main Table Grid */}
-      <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm">
+      {/* เมนูจัดการตารางคะแนน และปุ่มดาวน์โหลดชีท */}
+      <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm space-y-4">
+        {selectedExamId && selectedClassroom && rosterData.length > 0 && (
+          <div className="flex justify-between items-center bg-[#fff8f7] border border-[#e0bfbc]/30 p-4 rounded-2xl">
+            <div className="text-xs text-[#59413f]">
+              ห้องที่เลือก: <b className="text-[#251817]">ม. {selectedClassroom}</b> | รายชื่อนักเรียนทั้งหมด: <b className="text-[#8e171c] text-sm">{rosterData.length}</b> คน
+            </div>
+            {/* 🟢 ปุ่มดาวน์โหลดข้อมูลชีทแยกตามรายวิชาและห้องเรียน */}
+            <button
+              onClick={handleDownloadExcelCSV}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-700/10 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">file_download</span>
+              <span>ดาวน์โหลดข้อมูลชีท (.CSV)</span>
+            </button>
+          </div>
+        )}
+
         {!selectedExamId || !selectedClassroom ? (
           <div className="text-center py-12 text-[#59413f] font-medium border-2 border-dashed border-[#e0bfbc]/30 rounded-2xl">
             💡 กรุณาเลือก "วิชา" และ "ชั้นเรียน" ด้านบนเพื่อแสดงสมุดรายชื่อนักเรียนตามลำดับเลขที่
