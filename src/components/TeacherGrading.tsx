@@ -72,6 +72,7 @@ export default function TeacherGrading({
         if (submission && submission.answers) {
           const ans = submission.answers[q.id];
           if (q.type === "subjective") {
+            // ป้องกันเลข 0: ใช้ typeof ตรวจสอบเลขอย่างเจาะจง ไม่ใช้แค่การเช็ก True/False ลอยๆ
             if (ans && typeof ans === "object" && typeof ans.assignedScore === "number") {
               subjectiveScore += ans.assignedScore;
               gradedSubjectiveCount++;
@@ -173,7 +174,7 @@ export default function TeacherGrading({
 
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
-    const currentAnsItem = typeof currentAnswers[qId] === "object" ? { ...currentAnswers[qId] } : {};
+    const currentAnsItem = currentAnswers[qId] && typeof currentAnswers[qId] === "object" ? { ...currentAnswers[qId] } : {};
     
     currentAnswers[qId] = {
       ...currentAnsItem,
@@ -187,6 +188,7 @@ export default function TeacherGrading({
       matchingExam.questions.forEach((q) => {
         if (q.type === "subjective") {
           const ans = currentAnswers[q.id];
+          // ปรับปรุงตรงนี้ให้เช็กประเภทข้อมูลอย่างปลอดภัย แม้จะเป็นเลข 0 ก็คำนวณได้ถูกต้อง
           if (ans && typeof ans === "object" && typeof ans.assignedScore === "number") {
             newScore += ans.assignedScore;
           }
@@ -512,10 +514,12 @@ export default function TeacherGrading({
                                             
                                             <div className="flex flex-wrap gap-1">
                                               {Array.from({ length: q.points + 1 }).map((_, pt) => {
-                                                const isSelected = assignedScore === pt;
+                                                // ป้องกันการแครช: เช็กให้แน่ใจว่าเป็นตัวเลขตรงกันจริง ไม่หลุดเพราะเลข 0
+                                                const isSelected = isGraded && Number(assignedScore) === pt;
                                                 return (
                                                   <button
                                                     key={pt}
+                                                    type="button"
                                                     onClick={() => handleUpdateSubjectiveScore(submission, q.id, pt)}
                                                     className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center cursor-pointer transition-all ${
                                                       isSelected ? "bg-[#8e171c] text-white scale-110 shadow-md" : "bg-white text-[#59413f] border border-[#e0bfbc]/60 hover:bg-[#ffe9e7]"
