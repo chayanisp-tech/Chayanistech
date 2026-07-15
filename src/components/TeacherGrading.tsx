@@ -24,31 +24,36 @@ export default function TeacherGrading({
   const [selectedExamId, setSelectedExamId] = useState<string>("");
   const [selectedClassroom, setSelectedClassroom] = useState<string>("");
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
+  
+  // 🔥 เพิ่มระบบเซฟคะแนนลงกล่องความจำจำลองในหน้านี้ เพื่อกันคะแนนรีเซ็ตตอนสลับคน
+  const [localUpdates, setLocalUpdates] = useState<Record<string, Submission>>({});
 
-  // 1. ดึงรายชื่อห้องเรียนทั้งหมดจากฐานข้อมูลนักเรียน
+  // 1. ดึงรายชื่อห้องเรียนทั้งหมด
   const classrooms = useMemo(() => {
     return Array.from(new Set(students.map((s) => s.className))).filter(Boolean).sort();
   }, [students]);
 
-  // 2. จัดการสร้างตารางใบรายชื่อ (Roster) โดยเอาข้อมูลนักเรียนในห้องนั้นเป็นตัวตั้ง
+  // 2. จัดการสร้างตารางใบรายชื่อ (Roster Gradebook)
   const rosterData = useMemo(() => {
     if (!selectedClassroom || !selectedExamId) return [];
 
     const matchingExam = exams.find((e) => e.id === selectedExamId);
     if (!matchingExam) return [];
 
-    // กรองนักเรียนเฉพาะห้องที่เลือก และเรียงลำดับตามฐานข้อมูล (ตามลำดับ Index ใน Sheets)
     const classroomStudents = students.filter((s) => s.className === selectedClassroom);
 
     return classroomStudents.map((student) => {
-      // ค้นหาประวัติการส่งข้อสอบของนักเรียนคนนี้ในวิชานี้ (เอาใบ ล่าสุด เผื่อมีส่งซ้ำ)
       const studentSubmissions = submissions
         .filter((sub) => sub.studentId === student.id && sub.examId === selectedExamId)
         .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
 
-      const submission = studentSubmissions.length > 0 ? studentSubmissions[0] : null;
+      let submission = studentSubmissions.length > 0 ? studentSubmissions[0] : null;
 
-      // คำนวณแยกคะแนน ปรนัย และ อัตนัย ออกมาจากข้อมูลคำตอบดิบ
+      // 🌟 ดึงข้อมูลจากกล่องความจำชั่วคราวมาทับ (ถ้ามีตัวที่ครูเพิ่งกดตรวจสดๆ ร้อนๆ)
+      if (submission && localUpdates[submission.submissionId]) {
+        submission = localUpdates[submission.submissionId];
+      }
+
       let objectiveScore = 0;
       let subjectiveScore = 0;
       let totalMaxObjective = 0;
@@ -75,7 +80,6 @@ export default function TeacherGrading({
         }
       });
 
-      // ใช้ระบบค้นหาเพิ่มเติม (Search Filter) เผื่อครูต้องการหาชื่อเฉพาะเจาะจงในห้อง
       const matchesSearch =
         searchTerm === "" ||
         student.id.includes(searchTerm) ||
@@ -92,9 +96,9 @@ export default function TeacherGrading({
         matchesSearch,
       };
     }).filter(item => item.matchesSearch);
-  }, [selectedClassroom, selectedExamId, students, submissions, exams, searchTerm]);
+  }, [selectedClassroom, selectedExamId, students, submissions, exams, searchTerm, localUpdates]);
 
-  // ฟังก์ชันอัปเดตคะแนนอัตนัย (คงโครงสร้างเดิมเพื่อให้ซิงค์กับระบบคลาวด์ได้สมบูรณ์)
+  // ฟังก์ชันอัปเดตคะแนนอัตนัย
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
     const currentAnsItem = typeof currentAnswers[qId] === "object" ? { ...currentAnswers[qId] } : {};
@@ -133,6 +137,13 @@ export default function TeacherGrading({
       answers: currentAnswers,
     };
 
+    // 🌟 ล็อกคะแนนเข้ากล่องความจำจำลองในหน้านี้ทันที การันตีคะแนนไม่หายเมื่อกดสลับคน
+    setLocalUpdates((prev) => ({
+      ...prev,
+      [sub.submissionId]: updatedSubmission,
+    }));
+
+    // ส่งข้อมูลไปอัปเดตระบบใหญ่ตามโครงสร้างเดิม
     onUpdateSubmission(updatedSubmission);
   };
 
@@ -143,18 +154,21 @@ export default function TeacherGrading({
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ระบบสมุดคะแนนรายห้อง</h1>
           <p className="text-sm text-[#59413f] mt-1">
-            เลือกวิชาและชั้นเรียนเพื่อตรวจคะแนนอัตนัย เช็คชื่อคนเข้าสอบ และนำข้อมูลไปลงคะแนนออกเกรดได้ทันที
+            เลือกวิชาและชั้นเรียนเพื่อตรวจคะแนนอัตนัย คะแนนจะถูกจำไว้ในระบบชั่วคราวจนกว่าครูจะกดปุ่มส่งเข้าคลาวด์
           </p>
         </div>
         
         {syncStatus.spreadsheetId && (
           <button
-            onClick={onTriggerSync}
+            onClick={() => {
+              onTriggerSync();
+              // เมื่อกดซิงค์สำเร็จ สามารถปล่อยให้ระบบแม่เคลียร์ตัวแปรได้ตามปกติ
+            }}
             disabled={syncStatus.isSyncing}
             className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-[#8e171c]/10 cursor-pointer disabled:opacity-75 shrink-0"
           >
             <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
-            <span>{syncStatus.isSyncing ? "กำลังบันทึกคะแนนลงไดrฟ์..." : "ส่งคะแนนเข้า Google Sheets"}</span>
+            <span>{syncStatus.isSyncing ? "กำลังบันทึกคะแนนลงไดรฟ์..." : "ส่งคะแนนเข้า Google Sheets"}</span>
           </button>
         )}
       </div>
@@ -168,6 +182,7 @@ export default function TeacherGrading({
             onChange={(e) => {
               setSelectedExamId(e.target.value);
               setExpandedSubmissionId(null);
+              setLocalUpdates({}); // เปลี่ยนวิชาให้ล้างค่าสมุดจดชั่วคราว
             }}
             className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
           >
@@ -185,6 +200,7 @@ export default function TeacherGrading({
             onChange={(e) => {
               setSelectedClassroom(e.target.value);
               setExpandedSubmissionId(null);
+              setLocalUpdates({}); // เปลี่ยนห้องให้ล้างค่าสมุดจดชั่วคราว
             }}
             className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
             disabled={!selectedExamId}
