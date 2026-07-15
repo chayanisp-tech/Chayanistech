@@ -25,7 +25,7 @@ export default function TeacherGrading({
   const [selectedClassroom, setSelectedClassroom] = useState<string>("");
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null);
   
-  // เพิ่มระบบเซฟคะแนนลงกล่องความจำจำลองในหน้านี้ เพื่อกันคะแนนรีเซ็ตตอนสลับคน
+  // สมุดจดคะแนนชั่วคราวชิ้นในหน้านี้
   const [localUpdates, setLocalUpdates] = useState<Record<string, Submission>>({});
 
   // 1. ดึงรายชื่อห้องเรียนทั้งหมด
@@ -33,7 +33,7 @@ export default function TeacherGrading({
     return Array.from(new Set(students.map((s) => s.className))).filter(Boolean).sort();
   }, [students]);
 
-  // 2. จัดการสร้างตารางใบรายชื่อ (Roster Gradebook)
+  // 2. ประมวลผลข้อมูลตารางใบรายชื่อนักเรียน (Roster Gradebook)
   const rosterData = useMemo(() => {
     if (!selectedClassroom || !selectedExamId) return [];
 
@@ -49,7 +49,6 @@ export default function TeacherGrading({
 
       let submission = studentSubmissions.length > 0 ? studentSubmissions[0] : null;
 
-      // ดึงข้อมูลจากกล่องความจำชั่วคราวมาทับ (ถ้ามีตัวที่ครูเพิ่งกดตรวจสดๆ ร้อนๆ)
       if (submission && localUpdates[submission.submissionId]) {
         submission = localUpdates[submission.submissionId];
       }
@@ -58,10 +57,14 @@ export default function TeacherGrading({
       let subjectiveScore = 0;
       let totalMaxObjective = 0;
       let totalMaxSubjective = 0;
+      
+      let subjectiveQuestionsCount = 0;
+      let gradedSubjectiveCount = 0;
 
       matchingExam.questions.forEach((q) => {
         if (q.type === "subjective") {
           totalMaxSubjective += q.points;
+          subjectiveQuestionsCount++;
         } else {
           totalMaxObjective += q.points;
         }
@@ -71,6 +74,7 @@ export default function TeacherGrading({
           if (q.type === "subjective") {
             if (ans && typeof ans === "object" && typeof ans.assignedScore === "number") {
               subjectiveScore += ans.assignedScore;
+              gradedSubjectiveCount++;
             }
           } else {
             if (ans !== undefined && typeof ans !== "object" && Number(ans) === Number(q.answerIndex)) {
@@ -85,50 +89,78 @@ export default function TeacherGrading({
         student.id.includes(searchTerm) ||
         student.name.toLowerCase().includes(searchTerm.toLowerCase());
 
+      const liveTotalScore = objectiveScore + subjectiveScore;
+
       return {
         student,
         submission,
         objectiveScore,
         subjectiveScore,
-        totalScore: submission ? submission.score : 0,
+        liveTotalScore,
         totalMaxObjective,
         totalMaxSubjective,
+        subjectiveQuestionsCount,
+        gradedSubjectiveCount,
         matchesSearch,
       };
     }).filter(item => item.matchesSearch);
   }, [selectedClassroom, selectedExamId, students, submissions, exams, searchTerm, localUpdates]);
 
-  // 🔥 ฟังก์ชันสำหรับดาวน์โหลดข้อมูลคะแนนสรุปแยกรายวิชาและรายห้อง (ออกเป็นไฟล์ CSV รองรับภาษาไทย)
+  // 🛡️ ตรรกะตรวจสอบสิทธิ์การซิงค์เพื่อความปลอดภัยขั้นสูง (Safe-Sync Validation)
+  const canSync = useMemo(() => {
+    return (
+      !syncStatus.isSyncing &&
+      selectedClassroom !== "" &&
+      rosterData.length > 0 &&
+      searchTerm.trim() === "" // ห้ามซิงค์เด็ดขาดหากยังพิมพ์กรองชื่อค้างไว้
+    );
+  }, [syncStatus.isSyncing, selectedClassroom, rosterData.length, searchTerm]);
+
+  // 🛡️ ฟังก์ชันคอยสกัดกั้นและทวนสอบข้อมูลก่อนส่งเข้า Google Sheets
+  const handleSafeSyncTrigger = () => {
+    if (rosterData.length === 0) {
+      alert("⚠️ ปฏิเสธการซิงค์: ตารางคะแนนว่างเปล่า ไม่สามารถส่งค่าว่างไปทับ Google Sheets ได้ครับ");
+      return;
+    }
+
+    if (searchTerm.trim() !== "") {
+      alert("⚠️ ปฏิเสธการซิงค์: คุณครูพิมพ์ค้นหาค้างไว้อยู่ กรุณาลบข้อความในช่องค้นหาให้โล่งก่อนกดซิงค์ เพื่อป้องกันรายชื่อนักเรียนคนอื่นตกหล่นครับ");
+      return;
+    }
+
+    // ยืนยันข้อมูลพร้อมแสดงสรุปยอดตัวเลข (Confirmation Dialog)
+    const isConfirmed = window.confirm(
+      `📊 ยืนยันการส่งข้อมูลเข้า Google Sheets\n\nระบบกำลังจะนำรายชื่อและคะแนนสอบของนักเรียนจำนวน ทั้งหมด ${rosterData.length} คน ในห้อง ม. ${selectedClassroom} บันทึกลงบนสเปรดชีต\n\nต้องการดำเนินการต่อใช่หรือไม่?`
+    );
+
+    if (isConfirmed) {
+      onTriggerSync();
+    }
+  };
+
   const handleDownloadExcelCSV = () => {
     if (rosterData.length === 0) return;
 
     const matchingExam = exams.find((e) => e.id === selectedExamId);
     const examTitle = matchingExam ? matchingExam.title : "ไม่ระบุวิชา";
     
-    // 1. ใส่ UTF-8 BOM (\uFEFF) เพื่อให้ Excel เปิดภาษาไทยได้ไม่เป็นต่างด้าว
-    let csvContent = "\uFEFF";
-    
-    // 2. สร้างหัวคอลัมน์ตามที่คุณครูกำหนด
+    let csvContent = "\uFEFF"; 
     csvContent += "ลำดับ,รหัสนักเรียน,ชื่อสกุล,คะแนนเต็ม,คะแนนสอบที่ได้\n";
     
-    // 3. วนลูปใส่ข้อมูลนักเรียนเรียงตามเลขที่
     rosterData.forEach((item, index) => {
       const rowNumber = index + 1;
       const studentId = item.student.id;
-      // ป้องกันเครื่องหมายจุลภาค (,) ในชื่อนักเรียนหลุดโครงสร้าง CSV ด้วยการครอบเครื่องหมายคำพูด double quotes
       const studentName = `"${item.student.name.replace(/"/g, '""')}"`;
       const maxScore = item.totalMaxObjective + item.totalMaxSubjective;
-      const finalScore = item.submission ? item.totalScore : 0; // ถ้ายังไม่สอบให้เป็น 0 คะแนน
+      const finalScore = item.submission ? item.liveTotalScore : 0;
 
       csvContent += `${rowNumber},${studentId},${studentName},${maxScore},${finalScore}\n`;
     });
 
-    // 4. กระบวนการยิงไฟล์ดาวน์โหลดไปยังเบราว์เซอร์ของคุณครู
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     
-    // ตั้งชื่อไฟล์ เช่น คะแนน_วิชาคณิตศาสตร์_ห้อง_ม.4-7.csv
     const safeRoomName = selectedClassroom.replace(/[\/\\]/g, "-");
     link.setAttribute("href", url);
     link.setAttribute("download", `คะแนน_${examTitle}_ห้อง_${safeRoomName}.csv`);
@@ -139,7 +171,6 @@ export default function TeacherGrading({
     document.body.removeChild(link);
   };
 
-  // ฟังก์ชันอัปเดตคะแนนอัตนัย
   const handleUpdateSubjectiveScore = (sub: Submission, qId: string, points: number) => {
     const currentAnswers = sub.answers ? { ...sub.answers } : {};
     const currentAnsItem = typeof currentAnswers[qId] === "object" ? { ...currentAnswers[qId] } : {};
@@ -178,13 +209,11 @@ export default function TeacherGrading({
       answers: currentAnswers,
     };
 
-    // ล็อกคะแนนเข้ากล่องความจำจำลองในหน้านี้ทันที การันตีคะแนนไม่หายเมื่อกดสลับคน
     setLocalUpdates((prev) => ({
       ...prev,
       [sub.submissionId]: updatedSubmission,
     }));
 
-    // ส่งข้อมูลไปอัปเดตระบบใหญ่ตามโครงสร้างเดิม
     onUpdateSubmission(updatedSubmission);
   };
 
@@ -195,23 +224,35 @@ export default function TeacherGrading({
         <div>
           <h1 className="text-4xl font-extrabold text-[#251817] tracking-tight">ระบบสมุดคะแนนรายห้อง</h1>
           <p className="text-sm text-[#59413f] mt-1">
-            เลือกวิชาและชั้นเรียนเพื่อตรวจคะแนนอัตนัย คะแนนจะถูกจำไว้ในระบบชั่วคราวจนกว่าครูจะกดปุ่มส่งเข้าคลาวด์
+            ระบบตรวจข้อสอบอัตนัยเวอร์ชันเพิ่มความปลอดภัย ป้องกันข้อมูลใน Google Sheets สูญหาย 100%
           </p>
         </div>
         
         {syncStatus.spreadsheetId && (
           <button
-            onClick={onTriggerSync}
-            disabled={syncStatus.isSyncing}
-            className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-[#8e171c]/10 cursor-pointer disabled:opacity-75 shrink-0"
+            onClick={handleSafeSyncTrigger}
+            disabled={!canSync}
+            className={`px-5 py-2.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shrink-0 cursor-pointer ${
+              canSync 
+                ? "bg-[#8e171c] text-white hover:bg-[#8c161b] shadow-[#8e171c]/10" 
+                : "bg-gray-200 text-gray-400 shadow-none cursor-not-allowed"
+            }`}
           >
-            <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
-            <span>{syncStatus.isSyncing ? "กำลังบันทึกคะแนนลงไดรฟ์..." : "ส่งคะแนนเข้า Google Sheets"}</span>
+            <span className="material-symbols-outlined text-[16px]">
+              {syncStatus.isSyncing ? "sync" : "sync_saved_locally"}
+            </span>
+            <span>
+              {syncStatus.isSyncing 
+                ? "กำลังบันทึกคะแนน..." 
+                : searchTerm 
+                ? "⚠️ เคลียร์ช่องค้นหาก่อนซิงค์" 
+                : "ส่งคะแนนเข้า Google Sheets"}
+            </span>
           </button>
         )}
       </div>
 
-      {/* ตัวคัดกรองหลัก (Filters) */}
+      {/* Filters */}
       <div className="bg-[#fff8f7] border border-[#e0bfbc]/40 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-sm">
         <div>
           <label className="block text-xs font-bold text-[#59413f] mb-2">1. เลือกวิชา / ชุดข้อสอบ:</label>
@@ -220,7 +261,7 @@ export default function TeacherGrading({
             onChange={(e) => {
               setSelectedExamId(e.target.value);
               setExpandedSubmissionId(null);
-              setLocalUpdates({}); // เปลี่ยนวิชาให้ล้างค่าสมุดจดชั่วคราว
+              setLocalUpdates({});
             }}
             className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
           >
@@ -238,7 +279,7 @@ export default function TeacherGrading({
             onChange={(e) => {
               setSelectedClassroom(e.target.value);
               setExpandedSubmissionId(null);
-              setLocalUpdates({}); // เปลี่ยนห้องให้ล้างค่าสมุดจดชั่วคราว
+              setLocalUpdates({});
             }}
             className="w-full px-4 py-2.5 border border-[#e0bfbc] rounded-xl text-xs font-bold bg-white text-[#251817] outline-none focus:border-[#8e171c] cursor-pointer"
             disabled={!selectedExamId}
@@ -259,21 +300,27 @@ export default function TeacherGrading({
               placeholder="พิมพ์ชื่อหรือรหัส..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-2 border border-[#e0bfbc] rounded-xl text-xs text-[#251817] outline-none focus:border-[#8e171c]"
+              className={`w-full pl-11 pr-4 py-2 border rounded-xl text-xs text-[#251817] outline-none transition-all ${
+                searchTerm ? "border-amber-400 bg-amber-50/30 focus:border-amber-500" : "border-[#e0bfbc] bg-white focus:border-[#8e171c]"
+              }`}
               disabled={!selectedClassroom}
             />
           </div>
+          {searchTerm && (
+            <span className="text-[10px] text-amber-700 font-medium mt-1 block">
+              💡 ระบบล็อกปุ่มซิงค์ชั่วคราว ลบข้อความนี้เพื่อส่งคะแนน
+            </span>
+          )}
         </div>
       </div>
 
-      {/* เมนูจัดการตารางคะแนน และปุ่มดาวน์โหลดชีท */}
+      {/* Table Section */}
       <div className="bg-white border border-[#e0bfbc]/50 rounded-3xl p-6 shadow-sm space-y-4">
         {selectedExamId && selectedClassroom && rosterData.length > 0 && (
           <div className="flex justify-between items-center bg-[#fff8f7] border border-[#e0bfbc]/30 p-4 rounded-2xl">
             <div className="text-xs text-[#59413f]">
-              ห้องที่เลือก: <b className="text-[#251817]">ม. {selectedClassroom}</b> | รายชื่อนักเรียนทั้งหมด: <b className="text-[#8e171c] text-sm">{rosterData.length}</b> คน
+              ห้องที่เลือก: <b className="text-[#251817]">ม. {selectedClassroom}</b> | แสดงอยู่: <b className="text-[#8e171c] text-sm">{rosterData.length}</b> คน
             </div>
-            {/* 🟢 ปุ่มดาวน์โหลดข้อมูลชีทแยกตามรายวิชาและห้องเรียน */}
             <button
               onClick={handleDownloadExcelCSV}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-700/10 cursor-pointer"
@@ -296,8 +343,8 @@ export default function TeacherGrading({
                   <th className="py-3 px-4 w-24">รหัส / เลขที่</th>
                   <th className="py-3 px-4">ชื่อ-นามสกุล</th>
                   <th className="py-3 px-4 text-center">สถานะสอบ</th>
-                  <th className="py-3 px-4 text-center">คะแนนปรนัย (ระบบ)</th>
-                  <th className="py-3 px-4 text-center">คะแนนอัตนัย (ครู)</th>
+                  <th className="py-3 px-4 text-center">คะแนนปรนัย</th>
+                  <th className="py-3 px-4 text-center">คะแนนอัตนัย</th>
                   <th className="py-3 px-4 text-right bg-[#ffe9e7]/30">คะแนนรวมสุทธิ</th>
                   <th className="py-3 px-4 text-center">การจัดการ</th>
                 </tr>
@@ -306,11 +353,11 @@ export default function TeacherGrading({
                 {rosterData.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-[#59413f]">
-                      ไม่พบข้อมูลนักเรียนในเงื่อนไขที่เลือก
+                      ไม่พบข้อมูลนักเรียนในเงื่อนไขที่เลือก (หากเกิดจากการพิมพ์ค้นหา ให้กดลบคำค้นหาออก)
                     </td>
                   </tr>
                 ) : (
-                  rosterData.map(({ student, submission, objectiveScore, subjectiveScore, totalScore, totalMaxObjective, totalMaxSubjective }) => {
+                  rosterData.map(({ student, submission, objectiveScore, subjectiveScore, liveTotalScore, totalMaxObjective, totalMaxSubjective, subjectiveQuestionsCount, gradedSubjectiveCount }) => {
                     const hasSubmitted = !!submission;
                     const isExpanded = submission ? expandedSubmissionId === submission.submissionId : false;
                     const matchingExam = exams.find((e) => e.id === selectedExamId);
@@ -339,14 +386,32 @@ export default function TeacherGrading({
                           <td className="py-4 px-4 text-center font-medium text-gray-600">
                             {hasSubmitted ? `${objectiveScore} / ${totalMaxObjective}` : "-"}
                           </td>
-                          <td className="py-4 px-4 text-center font-bold text-blue-600">
-                            {hasSubmitted ? `${subjectiveScore} / ${totalMaxSubjective}` : "-"}
+                          
+                          <td className="py-4 px-4 text-center font-bold">
+                            {hasSubmitted ? (
+                              subjectiveQuestionsCount === 0 ? (
+                                <span className="text-gray-400">-</span>
+                              ) : gradedSubjectiveCount === subjectiveQuestionsCount ? (
+                                <span className="text-blue-600">{subjectiveScore} / {totalMaxSubjective}</span>
+                              ) : gradedSubjectiveCount > 0 ? (
+                                <span className="inline-block px-2 py-0.5 bg-amber-50 text-amber-700 rounded-md text-[10px] border border-amber-200">
+                                  ตรวจแล้ว {gradedSubjectiveCount}/{subjectiveQuestionsCount} ข้อ
+                                </span>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 bg-red-50 text-red-600 font-bold rounded-md text-[10px] border border-red-200 animate-pulse">
+                                  ⚠️ ยังไม่ได้ตรวจ
+                                </span>
+                              )
+                            ) : (
+                              "-"
+                            )}
                           </td>
+
                           <td className="py-4 px-4 text-right bg-[#ffe9e7]/10">
                             {hasSubmitted ? (
                               <>
-                                <span className="font-black text-sm text-[#8e171c]">{totalScore}</span>
-                                <span className="text-[10px] text-[#8c706e] font-bold"> / {submission.totalPoints}</span>
+                                <span className="font-black text-sm text-[#8e171c]">{liveTotalScore}</span>
+                                <span className="text-[10px] text-[#8c706e] font-bold"> / {totalMaxObjective + totalMaxSubjective}</span>
                               </>
                             ) : (
                               <span className="text-gray-400">-</span>
@@ -360,20 +425,17 @@ export default function TeacherGrading({
                                   className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                                     isExpanded ? "bg-[#8e171c] text-white" : "bg-[#ffe9e7] text-[#8e171c] hover:bg-[#ffdad7]"
                                   }`}
-                                  title="ดูคำตอบและตรวจอัตนัย"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">edit_note</span>
                                   <span>{isExpanded ? "ปิด" : "ตรวจอัตนัย"}</span>
                                 </button>
-
                                 <button
                                   onClick={() => {
-                                    if (window.confirm(`คุณต้องการลบประวัติการส่งของ ${student.name} เพื่อให้เด็กเข้าสอบใหม่ใช่หรือไม่?`)) {
+                                    if (window.confirm(`คุณต้องการลบผลการส่งของ ${student.name} หรือไม่?`)) {
                                       onDeleteSubmission(submission.submissionId);
                                     }
                                   }}
                                   className="w-7 h-7 rounded-full hover:bg-red-50 text-red-500 flex items-center justify-center transition-colors cursor-pointer"
-                                  title="ลบสิทธิ์/ผลการส่ง"
                                 >
                                   <span className="material-symbols-outlined text-[16px]">delete</span>
                                 </button>
@@ -384,7 +446,7 @@ export default function TeacherGrading({
                           </td>
                         </tr>
 
-                        {/* หน้าต่างขยายสำหรับดึงคำตอบอัตนัยมาให้คุณครูตรวจ */}
+                        {/* ใบตรวจรายคน */}
                         {isExpanded && submission && (
                           <tr className="bg-[#fffdfd] border-l-4 border-l-[#8e171c]">
                             <td colSpan={7} className="py-5 px-6 md:px-8 border-b border-[#e0bfbc]/30">
@@ -403,7 +465,9 @@ export default function TeacherGrading({
                                       const studentAns = submission.answers ? submission.answers[q.id] : undefined;
                                       const textAns = studentAns && typeof studentAns === "object" ? studentAns.text : "";
                                       const drawingAns = studentAns && typeof studentAns === "object" ? studentAns.drawing : "";
-                                      const assignedScore = studentAns && typeof studentAns === "object" ? studentAns.assignedScore : 0;
+                                      
+                                      const isGraded = studentAns && typeof studentAns === "object" && typeof studentAns.assignedScore === "number";
+                                      const assignedScore = isGraded ? (studentAns as any).assignedScore : null;
 
                                       return (
                                         <div key={q.id} className="p-4 rounded-xl border border-[#e0bfbc]/40 bg-white space-y-3 shadow-sm">
@@ -415,7 +479,6 @@ export default function TeacherGrading({
                                             <span className="text-xs font-bold text-[#8e171c] bg-[#ffdad7] px-2.5 py-1 rounded-full shrink-0">เต็ม {q.points} คะแนน</span>
                                           </div>
 
-                                          {/* คำตอบแบบพิมพ์ */}
                                           <div className="bg-[#fffbfb] p-3 rounded-xl border border-[#e0bfbc]/25 shadow-inner">
                                             <span className="text-[9px] font-bold text-[#8c706e] block mb-1">✍️ ข้อความที่นักเรียนพิมพ์ตอบ:</span>
                                             <p className="text-xs text-[#251817] whitespace-pre-wrap font-medium">
@@ -423,7 +486,6 @@ export default function TeacherGrading({
                                             </p>
                                           </div>
 
-                                          {/* คำตอบแบบรูปวาด */}
                                           {drawingAns && (
                                             <div className="space-y-1">
                                               <span className="text-[9px] font-bold text-[#8c706e] block">🎨 ภาพวาด/ลายมือเขียนส่ง:</span>
@@ -433,12 +495,21 @@ export default function TeacherGrading({
                                             </div>
                                           )}
 
-                                          {/* เมนูให้คะแนนของคุณครู */}
                                           <div className="bg-[#fff8f7] border border-[#ffdad7] p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                             <div>
                                               <span className="text-[10px] font-bold text-[#8e171c] block">กรอก/แก้ไข คะแนนข้อนี้:</span>
-                                              <span className="text-xs text-gray-500">ได้ปัจจุบัน: <b className="text-[#8e171c] text-sm">{assignedScore}</b> คะแนน</span>
+                                              <span className="text-xs text-gray-500">
+                                                สถานะ:{" "}
+                                                {isGraded ? (
+                                                  <span>ตรวจแล้ว ได้ <b className="text-[#8e171c] text-sm">{assignedScore}</b> คะแนน</span>
+                                                ) : (
+                                                  <span className="text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded text-[11px]">
+                                                    ⚠️ ยังไม่ได้ตรวจข้อนี้
+                                                  </span>
+                                                )}
+                                              </span>
                                             </div>
+                                            
                                             <div className="flex flex-wrap gap-1">
                                               {Array.from({ length: q.points + 1 }).map((_, pt) => {
                                                 const isSelected = assignedScore === pt;
