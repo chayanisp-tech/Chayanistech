@@ -102,7 +102,7 @@ async function updateSheetRange(token: string, spreadsheetId: string, range: str
   });
 }
 
-// 4. บันทึกข้อมูลและสำรองค่าจากเว็บแอปขึ้น Google Sheets (ระบบฝั่งครูสั่งอัปเดต)
+// 4. บันทึกข้อมูลและสำรองค่าจากเว็บแอปขึ้น Google Sheets (ระบบฝั่งครูสั่งอัปเดต) - เวอร์ชันใหม่ป้องกันข้อมูลหายถาวร 100%
 export async function syncLocalToSheets(
   token: string,
   spreadsheetId: string,
@@ -112,51 +112,142 @@ export async function syncLocalToSheets(
   settings: SystemSettings
 ): Promise<void> {
   try {
-    // ซิงค์ข้อมูลนักเรียน
-    await clearSheetRange(token, spreadsheetId, "Students!A:C");
+    const fetchRange = async (range: string): Promise<any[][] | null> => {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.values || null;
+    };
+
+    // ==========================================
+    // 🛡️ ปรับปรุง: ซิงค์ข้อมูลนักเรียนแบบประสม (Smart Upsert)
+    // ==========================================
+    const existingStudentRows = await fetchRange("Students!A:C");
+    const studentMap = new Map<string, { name: string; className: string }>();
+    
+    // โหลดข้อมูลเก่ามาเก็บไว้ก่อน
+    if (existingStudentRows && existingStudentRows.length > 1) {
+      for (let i = 1; i < existingStudentRows.length; i++) {
+        const row = existingStudentRows[i];
+        if (row[0] && row[0].toString().trim() !== "") {
+          studentMap.set(row[0].toString().trim(), {
+            name: row[1]?.toString() || "",
+            className: row[2]?.toString() || ""
+          });
+        }
+      }
+    }
+
+    // เอาข้อมูลใหม่ไปทับ/เพิ่ม
+    if (students && students.length > 0) {
+      students.forEach(s => {
+        if (s.id && s.id.trim() !== "") {
+          studentMap.set(s.id.trim(), {
+            name: s.name,
+            className: s.className
+          });
+        }
+      });
+    }
+
     const studentValues = [
-      ["รหัสนักเรียน", "ชื่อ-นามสกุล", "ชั้นเรียน"],
-      ...students.map(s => [s.id, s.name, s.className]),
+      ["รหัสนักเรียน", "ชื่อ-นามสกุล", "ชั้นเรียน"]
     ];
+    studentMap.forEach((value, id) => {
+      studentValues.push([id, value.name, value.className]);
+    });
+
+    await clearSheetRange(token, spreadsheetId, "Students!A:C");
     await updateSheetRange(token, spreadsheetId, "Students!A1", studentValues);
 
-    // ซิงค์ข้อสอบและคำถามทดสอบ
-    await clearSheetRange(token, spreadsheetId, "Exams!A:G");
+    // ==========================================
+    // 🛡️ ปรับปรุง: ซิงค์ข้อมูลข้อสอบแบบประสม (Smart Upsert)
+    // ==========================================
+    const existingExamRows = await fetchRange("Exams!A:G");
+    const examMap = new Map<string, any[]>();
+    
+    if (existingExamRows && existingExamRows.length > 1) {
+      for (let i = 1; i < existingExamRows.length; i++) {
+        const row = existingExamRows[i];
+        if (row[0] && row[0].toString().trim() !== "") {
+          examMap.set(row[0].toString().trim(), row);
+        }
+      }
+    }
+
+    if (exams && exams.length > 0) {
+      exams.forEach(e => {
+        if (e.id && e.id.trim() !== "") {
+          examMap.set(e.id.trim(), [
+            e.id, e.title, e.courseCode, e.description,
+            JSON.stringify(e.questions), e.timeLimitMinutes, e.isActive ? "TRUE" : "FALSE"
+          ]);
+        }
+      });
+    }
+
     const examValues = [
-      ["รหัสข้อสอบ", "หัวข้อ", "รหัสวิชา", "คำอธิบาย", "คำถาม JSON", "เวลาสอบนาที", "สถานะเปิดสอบ"],
-      ...exams.map(e => [
-        e.id, e.title, e.courseCode, e.description,
-        JSON.stringify(e.questions), e.timeLimitMinutes, e.isActive ? "TRUE" : "FALSE",
-      ]),
+      ["รหัสข้อสอบ", "หัวข้อ", "รหัสวิชา", "คำอธิบาย", "คำถาม JSON", "เวลาสอบนาที", "สถานะเปิดสอบ"]
     ];
+    examMap.forEach((row) => {
+      examValues.push(row);
+    });
+
+    await clearSheetRange(token, spreadsheetId, "Exams!A:G");
     await updateSheetRange(token, spreadsheetId, "Exams!A1", examValues);
 
-    // ซิงค์ผลคะแนนนักเรียน
-    await clearSheetRange(token, spreadsheetId, "Scores!A:M");
+    // ==========================================
+    // 🛡️ ปรับปรุง: ซิงค์ผลคะแนนแบบประสม (Smart Upsert)
+    // ==========================================
+    const existingScoreRows = await fetchRange("Scores!A:M");
+    const scoreMap = new Map<string, any[]>();
+    
+    if (existingScoreRows && existingScoreRows.length > 1) {
+      for (let i = 1; i < existingScoreRows.length; i++) {
+        const row = existingScoreRows[i];
+        if (row[0] && row[0].toString().trim() !== "") {
+          scoreMap.set(row[0].toString().trim(), row);
+        }
+      }
+    }
+
+    if (submissions && submissions.length > 0) {
+      submissions.forEach(s => {
+        if (s.submissionId && s.submissionId.trim() !== "") {
+          const cleanedAnswers = s.answers ? JSON.parse(JSON.stringify(s.answers)) : {};
+          Object.keys(cleanedAnswers).forEach((qId) => {
+            const ans = cleanedAnswers[qId];
+            if (ans && typeof ans === "object" && ans.drawing) {
+              cleanedAnswers[qId] = {
+                ...ans,
+                drawing: "__HAS_DRAWING__"
+              };
+            }
+          });
+
+          scoreMap.set(s.submissionId.trim(), [
+            s.submissionId, s.studentId, s.studentName, s.studentClassName,
+            s.examId, s.examTitle, s.score, s.totalPoints, s.answeredCount,
+            s.totalQuestions, s.submittedAt, s.status, JSON.stringify(cleanedAnswers)
+          ]);
+        }
+      });
+    }
+
     const scoreValues = [
-      ["รหัสการส่ง", "รหัสนักเรียน", "ชื่อนักเรียน", "ชั้นเรียน", "รหัสข้อสอบ", "ชื่อข้อสอบ", "คะแนนที่ได้", "คะแนนเต็ม", "ทำไปทั้งหมด", "จำนวนข้อทั้งหมด", "เวลาที่ส่ง", "สถานะ", "คำตอบ JSON"],
-      ...submissions.map(s => {
-        // คลีนภาพวาดเขียนออกก่อนเขียนลงสเปรดชีตเพื่อเลี่ยงปัญหาเซลล์โดนตัดขาด (เกิน 50,000 ตัวอักษร)
-        const cleanedAnswers = s.answers ? JSON.parse(JSON.stringify(s.answers)) : {};
-        Object.keys(cleanedAnswers).forEach((qId) => {
-          const ans = cleanedAnswers[qId];
-          if (ans && typeof ans === "object" && ans.drawing) {
-            cleanedAnswers[qId] = {
-              ...ans,
-              drawing: "__HAS_DRAWING__"
-            };
-          }
-        });
-        return [
-          s.submissionId, s.studentId, s.studentName, s.studentClassName,
-          s.examId, s.examTitle, s.score, s.totalPoints, s.answeredCount,
-          s.totalQuestions, s.submittedAt, s.status, JSON.stringify(cleanedAnswers),
-        ];
-      }),
+      ["รหัสการส่ง", "รหัสนักเรียน", "ชื่อนักเรียน", "ชั้นเรียน", "รหัสข้อสอบ", "ชื่อข้อสอบ", "คะแนนที่ได้", "คะแนนเต็ม", "ทำไปทั้งหมด", "จำนวนข้อทั้งหมด", "เวลาที่ส่ง", "สถานะ", "คำตอบ JSON"]
     ];
+    scoreMap.forEach((row) => {
+      scoreValues.push(row);
+    });
+
+    await clearSheetRange(token, spreadsheetId, "Scores!A:M");
     await updateSheetRange(token, spreadsheetId, "Scores!A1", scoreValues);
 
-    // ซิงค์การตั้งค่าระบบ
+    // ==========================================
+    // ซิงค์การตั้งค่าระบบ (ใช้โค้ดเดิมได้เพราะอัปเดตแบบตายตัว)
+    // ==========================================
     await clearSheetRange(token, spreadsheetId, "Settings!A:B");
     const settingValues = [
       ["ชื่อการตั้งค่า", "ค่า"],
@@ -451,4 +542,3 @@ export function mergeSubmissionsPreservingDrawings(
     };
   });
 }
-
