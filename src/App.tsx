@@ -539,18 +539,26 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setIsOAuthConnected(true);
-        setTeacherEmail(user.email || "");
-        handleFullSync(token);
-      },
-      () => {
-        setIsOAuthConnected(false);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
+  const unsubscribe = initAuth(
+    (user) => {
+      /**
+       * Firebase Authentication
+       * มีหน้าที่แค่บอกว่าใคร login อยู่
+       *
+       * ห้าม Google Sheets sync อัตโนมัติ
+       */
+      setTeacherEmail(
+        user.email || ""
+      );
+    },
+    () => {
+      setTeacherEmail("");
+      setIsOAuthConnected(false);
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
 
   const handleEnterExamRoom = (studentId: string) => {
     const studentObj = students.find((s) => s.id === studentId);
