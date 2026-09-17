@@ -354,48 +354,7 @@ export default function App() {
         console.error("Firebase Initialization Failed:", e);
       }
 
-      // 3. ดึงรายชื่อนักเรียนและข้อสอบล่าสุดจากตาราง Google Sheets เสมอ (กรณีผู้ใช้เปิดจากเครื่องใหม่)
-      if (MY_MASTER_SHEET_ID) {
-        try {
-          const cleanSheetId = extractSpreadsheetId(MY_MASTER_SHEET_ID);
-          if (cleanSheetId) {
-            console.log("📋 กำลังดึงรายชื่อและข้อสอบล่าสุดจากตารางหลัก Google Sheets เสนอคุณครู:", cleanSheetId);
-            const fetched = await fetchPublicSheetsData(cleanSheetId);
-            if (fetched) {
-              if (fetched.students && fetched.students.length > 0) {
-                setStudents(fetched.students);
-                localStorage.setItem("exam_students", JSON.stringify(fetched.students));
-              }
-              if (fetched.exams && fetched.exams.length > 0) {
-                setExams(fetched.exams);
-                localStorage.setItem("exam_exams", JSON.stringify(fetched.exams));
-              }
-              if (fetched.settings) {
-                const mergedSettings = { ...DEFAULT_SETTINGS, ...fetched.settings };
-                setSettings(mergedSettings);
-                localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
-              }
 
-              const isPublishedToken = cleanSheetId.startsWith("2PACX-");
-              const updatedSync: SyncStatus = {
-                spreadsheetId: cleanSheetId,
-                spreadsheetUrl: isPublishedToken 
-                  ? `https://docs.google.com/spreadsheets/d/e/${cleanSheetId}/pubhtml`
-                  : `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
-                lastSyncedAt: new Date().toISOString(),
-                isSyncing: false,
-                error: null,
-              };
-              setSyncStatus(updatedSync);
-              localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
-              setActiveSheetId(cleanSheetId);
-              console.log("⚡ ซิงค์ตารางเรียน Google Sheets อัตโนมัติสำเร็จ!");
-            }
-          }
-        } catch (sheetError) {
-          console.error("Silent startup Google Sheets pull failed:", sheetError);
-        }
-      }
 
       setIsLoadingPublicData(false);
     };
@@ -568,36 +527,45 @@ export default function App() {
     }
   };
 
-  const handleExamSubmitted = async (submission: Submission) => {
-    if (isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
+ const handleExamSubmitted = async (submission: Submission) => {
+  if (isSubmittingRef.current) return;
 
-    try {
-      const nextSubmissions = [submission, ...submissions];
-      saveStateToLocal(undefined, undefined, nextSubmissions);
-      
-      setLatestSubmission(submission);
-      setCurrentScreen("student_success");
+  isSubmittingRef.current = true;
 
-      const webAppUrl = "https://script.google.com/macros/s/AKfycbxPc9UKoEkXe6GmhX4bjYlxNBdgYWfGV3ACJVkdobj3IgOIgbWRBRmTJyz3KlspfCCubg/exec"; 
+  try {
+    /**
+     * StudentExamRoom บันทึก submission
+     * ลง Firestore เรียบร้อยแล้ว
+     *
+     * App.tsx มีหน้าที่เพียงอัปเดต UI
+     * ห้าม sync submissions ทั้งหมดซ้ำ
+     * และไม่ส่ง Google Sheets ระหว่างสอบ
+     */
 
-      if (webAppUrl) {
-        fetch(webAppUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ submission: submission }),
-        })
-        .then(() => console.log("✅ คะแนนถูกส่งเข้า Google Sheets เรียบร้อย!"))
-        .catch((err) => console.error("Sheets push error:", err));
-      }
+    setSubmissions((prev) => {
+      const withoutDuplicate = prev.filter(
+        (item) =>
+          item.submissionId !== submission.submissionId
+      );
 
-    } catch (error) {
-      console.error("Submission failed:", error);
-    } finally {
-      isSubmittingRef.current = false;
-    }
-  };
+      return [
+        submission,
+        ...withoutDuplicate,
+      ];
+    });
+
+    setLatestSubmission(submission);
+
+    setCurrentScreen("student_success");
+  } catch (error) {
+    console.error(
+      "Unable to update submission UI:",
+      error
+    );
+  } finally {
+    isSubmittingRef.current = false;
+  }
+};
 
   const handleConnectGoogle = async () => {
     try {
