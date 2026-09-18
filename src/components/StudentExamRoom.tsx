@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
-import { collection, addDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -124,28 +124,45 @@ export default function StudentExamRoom({
         });
 
         // สร้างข้อมูลส่งแบบ "ทุจริต" และให้คะแนนเป็น 0 (โมฆะ)
-        const newSubmission: Submission = {
-          submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
-          studentId: student.id,
-          studentName: student.name,
-          studentClassName: student.className,
-          examId: exam.id,
-          examTitle: exam.title,
-          score: 0, // ปรับคะแนนเป็นโมฆะทันที
-          totalPoints: totalPoints,
-          answeredCount: actualAnsweredCount,
-          totalQuestions: exam.questions.length,
-          submittedAt: new Date().toISOString(),
-          status: "ทุจริต",
-          answers: originalAnswers,
-        };
+        const submissionId = `${exam.id}_${student.id}`;
 
-        setIsExamStarted(false);
-        setSelectedExam(null);
-        setCheatCount(0);
-        onExamSubmitted(newSubmission);
-      }
-    };
+const newSubmission: Submission = {
+  submissionId,
+  studentId: student.id,
+  studentName: student.name,
+  studentClassName: student.className,
+  examId: exam.id,
+  examTitle: exam.title,
+  score: 0,
+  totalPoints: totalPoints,
+  answeredCount: actualAnsweredCount,
+  totalQuestions: exam.questions.length,
+  submittedAt: new Date().toISOString(),
+  status: "ทุจริต",
+  answers: originalAnswers,
+};
+
+        setDoc(
+  doc(db, "submissions", submissionId),
+  newSubmission
+)
+  .then(() => {
+    setIsExamStarted(false);
+    setSelectedExam(null);
+    setCheatCount(0);
+
+    onExamSubmitted(newSubmission);
+  })
+  .catch((error) => {
+    console.error(
+      "ไม่สามารถบันทึกสถานะผิดปกติลง Firebase:",
+      error
+    );
+
+    alert(
+      "ไม่สามารถบันทึกผลสอบได้ กรุณาแจ้งครูผู้คุมสอบ"
+    );
+  });
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -292,24 +309,29 @@ const executeSubmitExam = async () => {
         }
       });
 
-      const newSubmission: Submission = {
-        submissionId: `EX-${Math.floor(100000 + Math.random() * 900000)}`,
-        studentId: student.id,
-        studentName: student.name,
-        studentClassName: student.className,
-        examId: exam.id,
-        examTitle: exam.title,
-        score: autoScore,
-        totalPoints: totalPoints,
-        answeredCount: actualAnsweredCount,
-        totalQuestions: exam.questions.length,
-        submittedAt: new Date().toISOString(),
-        status: "สมบูรณ์",
-        answers: originalAnswers,
-      };
+      const submissionId = `${exam.id}_${student.id}`;
+
+const newSubmission: Submission = {
+  submissionId,
+  studentId: student.id,
+  studentName: student.name,
+  studentClassName: student.className,
+  examId: exam.id,
+  examTitle: exam.title,
+  score: autoScore,
+  totalPoints: totalPoints,
+  answeredCount: actualAnsweredCount,
+  totalQuestions: exam.questions.length,
+  submittedAt: new Date().toISOString(),
+  status: "สมบูรณ์",
+  answers: originalAnswers,
+};
 
       // 3. ยิงข้อมูลผลสอบลงฐานข้อมูล Firebase Firestore
-      await addDoc(collection(db, "submissions"), newSubmission);
+     await setDoc(
+  doc(db, "submissions", submissionId),
+  newSubmission
+);
 
       // 4. ล้างหน้าจอและแจ้งเตือนตามระบบเดิมของคุณ
       setIsExamStarted(false);
