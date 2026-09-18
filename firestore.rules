@@ -25,16 +25,29 @@ service cloud.firestore {
     }
 
     /**
-     * ข้อสอบ
-     * นักเรียนอ่านได้
-     * ครูจัดการได้
-     *
-     * รอบถัดไปเราจะปรับให้ไม่ส่งเฉลยลง client
+     * Legacy exam documents. Public read remains temporarily enabled until
+     * every active exam has been copied and the student read path is switched.
      */
     match /exams/{examId} {
       allow read: if true;
 
       allow create, update, delete: if isTeacher();
+    }
+
+    /**
+     * Student-safe exam payload. answerIndex must never be stored here.
+     */
+    match /exams_public/{examId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    /**
+     * Server-only answer keys. Vercel uses a service account, while browser
+     * clients are limited to the authenticated teacher account.
+     */
+    match /exam_answer_keys/{examId} {
+      allow read, create, update, delete: if isTeacher();
     }
 
     /**
