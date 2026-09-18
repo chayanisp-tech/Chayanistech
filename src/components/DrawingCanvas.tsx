@@ -20,6 +20,9 @@ export default function DrawingCanvas({
   const canvasRef =
     useRef<HTMLCanvasElement | null>(null);
 
+  const autoSaveTimerRef =
+    useRef<number | null>(null);
+
   const [isDrawing, setIsDrawing] =
     useState(false);
 
@@ -43,19 +46,19 @@ export default function DrawingCanvas({
     ROWS * BOX_SIZE;
 
   /**
+   * Auto save หลังหยุดวาด 700ms
+   */
+  const AUTO_SAVE_DELAY_MS =
+    700;
+
+  /**
    * จำกัดขนาด Base64
-   *
-   * เป้าหมาย:
-   * รูปหนึ่งไม่ควรเกิน ~120 KB
-   *
-   * Firestore มี document size limit
-   * ดังนั้นยิ่งเล็กยิ่งปลอดภัย
    */
   const MAX_BASE64_BYTES =
     120 * 1024;
 
   /**
-   * ประมาณขนาดจริงของ Base64
+   * ประมาณขนาดภาพจาก Base64
    */
   const estimateBase64Bytes = (
     dataUrl: string
@@ -74,8 +77,11 @@ export default function DrawingCanvas({
   const drawChineseGrid = (
     ctx: CanvasRenderingContext2D
   ) => {
-    ctx.strokeStyle = "#e0bfbc";
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle =
+      "#e0bfbc";
+
+    ctx.lineWidth =
+      1.5;
 
     for (
       let r = 0;
@@ -183,7 +189,12 @@ export default function DrawingCanvas({
   };
 
   /**
-   * โหลดค่าที่บันทึกไว้กลับมา
+   * โหลดภาพคำตอบเดิมกลับเข้า Canvas
+   *
+   * ใช้ตอน:
+   * - กลับมาข้อเดิม
+   * - Refresh
+   * - Resume exam
    */
   useEffect(() => {
     const canvas =
@@ -242,7 +253,23 @@ export default function DrawingCanvas({
   }, [value]);
 
   /**
-   * หาตำแหน่ง pointer
+   * Cleanup timer ตอน component ถูกปิด
+   */
+  useEffect(() => {
+    return () => {
+      if (
+        autoSaveTimerRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          autoSaveTimerRef.current
+        );
+      }
+    };
+  }, []);
+
+  /**
+   * หาตำแหน่งปากกา/เมาส์
    */
   const getPointerPosition = (
     e:
@@ -303,11 +330,239 @@ export default function DrawingCanvas({
     };
   };
 
+  /**
+   * สร้างภาพ JPEG ขนาดเล็ก
+   */
+  const createCompressedImage = (
+    sourceCanvas: HTMLCanvasElement,
+    quality: number
+  ): string => {
+    const resizeCanvas =
+      document.createElement(
+        "canvas"
+      );
+
+    const ctx =
+      resizeCanvas.getContext(
+        "2d"
+      );
+
+    const targetWidth =
+      400;
+
+    const targetHeight =
+      Math.round(
+        (
+          sourceCanvas.height /
+          sourceCanvas.width
+        ) *
+          targetWidth
+      );
+
+    resizeCanvas.width =
+      targetWidth;
+
+    resizeCanvas.height =
+      targetHeight;
+
+    if (!ctx) {
+      throw new Error(
+        "ไม่สามารถสร้าง Canvas สำหรับบีบอัดรูปได้"
+      );
+    }
+
+    /**
+     * ถมพื้นหลังขาว
+     * ป้องกัน JPEG กลายเป็นพื้นดำ
+     */
+    ctx.fillStyle =
+      "#ffffff";
+
+    ctx.fillRect(
+      0,
+      0,
+      targetWidth,
+      targetHeight
+    );
+
+    ctx.drawImage(
+      sourceCanvas,
+      0,
+      0,
+      targetWidth,
+      targetHeight
+    );
+
+    return resizeCanvas.toDataURL(
+      "image/jpeg",
+      quality
+    );
+  };
+
+  /**
+   * ========================================
+   * SAVE DRAWING
+   * ========================================
+   *
+   * ใช้ทั้ง Auto Save และปุ่ม Save เอง
+   */
+  const saveDrawing =
+    async () => {
+      const canvas =
+        canvasRef.current;
+
+      if (!canvas) return;
+
+      /**
+       * ถ้ากำลังบันทึกอยู่
+       * ไม่ต้องยิงซ้ำ
+       */
+      if (isUploading) {
+        return;
+      }
+
+      try {
+        setIsUploading(true);
+
+        let quality =
+          0.45;
+
+        let compressedBase64 =
+          createCompressedImage(
+            canvas,
+            quality
+          );
+
+        let bytes =
+          estimateBase64Bytes(
+            compressedBase64
+          );
+
+        /**
+         * ถ้าเกิน 120KB
+         * ลด quality ลงเรื่อย ๆ
+         */
+        while (
+          bytes >
+            MAX_BASE64_BYTES &&
+          quality > 0.2
+        ) {
+          quality -=
+            0.05;
+
+          compressedBase64 =
+            createCompressedImage(
+              canvas,
+              quality
+            );
+
+          bytes =
+            estimateBase64Bytes(
+              compressedBase64
+            );
+        }
+
+        if (
+          bytes >
+          MAX_BASE64_BYTES
+        ) {
+          console.warn(
+            "Drawing is still larger than recommended:",
+            bytes
+          );
+        }
+
+        /**
+         * ส่งภาพกลับ StudentExamRoom
+         *
+         * จากนั้นระบบ Autosave ของข้อสอบ
+         * จะเก็บ answers ลง localStorage ต่อเอง
+         */
+        onChange(
+          compressedBase64
+        );
+
+        setHasUnsavedChanges(
+          false
+        );
+
+        console.log(
+          `Drawing autosaved: student=${studentId}, question=${questionId}, size=${Math.round(
+            bytes / 1024
+          )}KB`
+        );
+      } catch (error) {
+        console.error(
+          "Compression error:",
+          error
+        );
+
+        /**
+         * ถ้าบันทึกไม่สำเร็จ
+         * ให้สถานะยังเป็น unsaved
+         * เพื่อให้นักเรียนกด Save เองได้
+         */
+        setHasUnsavedChanges(
+          true
+        );
+      } finally {
+        setIsUploading(
+          false
+        );
+      }
+    };
+
+  /**
+   * ตั้งเวลาบันทึกอัตโนมัติ
+   */
+  const scheduleAutoSave =
+    () => {
+      if (
+        autoSaveTimerRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          autoSaveTimerRef.current
+        );
+      }
+
+      autoSaveTimerRef.current =
+        window.setTimeout(
+          () => {
+            autoSaveTimerRef.current =
+              null;
+
+            saveDrawing();
+          },
+          AUTO_SAVE_DELAY_MS
+        );
+    };
+
+  /**
+   * เริ่มวาด
+   */
   const startDrawing = (
     e:
       | React.MouseEvent<HTMLCanvasElement>
       | React.TouchEvent<HTMLCanvasElement>
   ) => {
+    /**
+     * ถ้ากำลังรอ Auto Save
+     * แล้วเด็กกลับมาวาดต่อ
+     * ให้ยกเลิก timer ก่อน
+     */
+    if (
+      autoSaveTimerRef.current !==
+      null
+    ) {
+      window.clearTimeout(
+        autoSaveTimerRef.current
+      );
+
+      autoSaveTimerRef.current =
+        null;
+    }
+
     const canvas =
       canvasRef.current;
 
@@ -342,7 +597,8 @@ export default function DrawingCanvas({
     ctx.strokeStyle =
       "#1a1a1a";
 
-    ctx.lineWidth = 3.5;
+    ctx.lineWidth =
+      3.5;
 
     ctx.lineCap =
       "round";
@@ -357,12 +613,17 @@ export default function DrawingCanvas({
     );
   };
 
+  /**
+   * วาดต่อเนื่อง
+   */
   const draw = (
     e:
       | React.MouseEvent<HTMLCanvasElement>
       | React.TouchEvent<HTMLCanvasElement>
   ) => {
-    if (!isDrawing) return;
+    if (!isDrawing) {
+      return;
+    }
 
     const canvas =
       canvasRef.current;
@@ -396,212 +657,103 @@ export default function DrawingCanvas({
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
-    if (!isDrawing) {
-      return;
-    }
-
-    setIsDrawing(false);
-
-    setHasUnsavedChanges(
-      true
-    );
-  };
-
   /**
-   * สร้างภาพ JPEG ขนาดเล็ก
+   * ยกปากกา / ปล่อยเมาส์
+   *
+   * จุดนี้จะเรียก Auto Save
    */
-  const createCompressedImage =
-    (
-      sourceCanvas: HTMLCanvasElement,
-      quality: number
-    ): string => {
-      const resizeCanvas =
-        document.createElement(
-          "canvas"
-        );
-
-      const ctx =
-        resizeCanvas.getContext(
-          "2d"
-        );
-
-      /**
-       * 400px เพียงพอสำหรับ
-       * ตารางคัด 5 ช่อง
-       */
-      const targetWidth =
-        400;
-
-      const targetHeight =
-        Math.round(
-          (sourceCanvas.height /
-            sourceCanvas.width) *
-            targetWidth
-        );
-
-      resizeCanvas.width =
-        targetWidth;
-
-      resizeCanvas.height =
-        targetHeight;
-
-      if (!ctx) {
-        throw new Error(
-          "ไม่สามารถสร้าง Canvas สำหรับบีบอัดรูปได้"
-        );
+  const stopDrawing =
+    () => {
+      if (!isDrawing) {
+        return;
       }
 
+      setIsDrawing(false);
+
+      setHasUnsavedChanges(
+        true
+      );
+
       /**
-       * JPEG ไม่มี transparency
-       * จึงต้องถมพื้นขาวก่อน
+       * รอ 700ms ก่อน Save
+       *
+       * ถ้าเด็กวาดต่อทันที
+       * timer เดิมจะถูกยกเลิก
        */
-      ctx.fillStyle =
-        "#ffffff";
-
-      ctx.fillRect(
-        0,
-        0,
-        targetWidth,
-        targetHeight
-      );
-
-      ctx.drawImage(
-        sourceCanvas,
-        0,
-        0,
-        targetWidth,
-        targetHeight
-      );
-
-      return resizeCanvas.toDataURL(
-        "image/jpeg",
-        quality
-      );
+      scheduleAutoSave();
     };
 
   /**
-   * บันทึกคำตอบ
-   *
-   * ไม่มี Firebase Storage
-   * จึงบีบ Base64 ให้เล็กที่สุด
+   * ล้างสมุดคัด
    */
-  const saveToCloud =
-    async () => {
+  const clearCanvas =
+    () => {
+      /**
+       * ยกเลิก Auto Save
+       * ที่ยังค้างอยู่ก่อน
+       */
+      if (
+        autoSaveTimerRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          autoSaveTimerRef.current
+        );
+
+        autoSaveTimerRef.current =
+          null;
+      }
+
       const canvas =
         canvasRef.current;
 
       if (!canvas) return;
 
-      try {
-        setIsUploading(true);
-
-        /**
-         * เริ่ม quality 45%
-         */
-        let quality =
-          0.45;
-
-        let compressedBase64 =
-          createCompressedImage(
-            canvas,
-            quality
-          );
-
-        let bytes =
-          estimateBase64Bytes(
-            compressedBase64
-          );
-
-        /**
-         * ถ้ายังเกิน 120 KB
-         * ลด quality ลงอีก
-         */
-        while (
-          bytes >
-            MAX_BASE64_BYTES &&
-          quality > 0.2
-        ) {
-          quality -= 0.05;
-
-          compressedBase64 =
-            createCompressedImage(
-              canvas,
-              quality
-            );
-
-          bytes =
-            estimateBase64Bytes(
-              compressedBase64
-            );
-        }
-
-        /**
-         * Safety check
-         */
-        if (
-          bytes >
-          MAX_BASE64_BYTES
-        ) {
-          console.warn(
-            "Drawing is still larger than recommended:",
-            bytes
-          );
-        }
-
-        onChange(
-          compressedBase64
+      const ctx =
+        canvas.getContext(
+          "2d"
         );
 
-        setHasUnsavedChanges(
-          false
-        );
+      if (!ctx) return;
 
-        console.log(
-          `Drawing saved: student=${studentId}, question=${questionId}, size=${Math.round(
-            bytes / 1024
-          )}KB`
-        );
-      } catch (error) {
-        console.error(
-          "Compression error:",
-          error
-        );
-      } finally {
-        setIsUploading(
-          false
-        );
-      }
-    };
-
-  const clearCanvas = () => {
-    const canvas =
-      canvasRef.current;
-
-    if (!canvas) return;
-
-    const ctx =
-      canvas.getContext(
-        "2d"
+      ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
       );
 
-    if (!ctx) return;
+      drawChineseGrid(ctx);
 
-    ctx.clearRect(
-      0,
-      0,
-      canvas.width,
-      canvas.height
-    );
+      /**
+       * ลบคำตอบใน StudentExamRoom ด้วย
+       */
+      onChange("");
 
-    drawChineseGrid(ctx);
+      setHasUnsavedChanges(
+        false
+      );
+    };
 
-    onChange("");
+  /**
+   * ปุ่ม Save สำรอง
+   */
+  const handleManualSave =
+    () => {
+      if (
+        autoSaveTimerRef.current !==
+        null
+      ) {
+        window.clearTimeout(
+          autoSaveTimerRef.current
+        );
 
-    setHasUnsavedChanges(
-      false
-    );
-  };
+        autoSaveTimerRef.current =
+          null;
+      }
+
+      saveDrawing();
+    };
 
   return (
     <div className="flex flex-col items-center gap-3 bg-[#fffaf9] p-4 rounded-3xl border border-[#e0bfbc]/50 w-full max-w-full overflow-hidden">
@@ -624,27 +776,35 @@ export default function DrawingCanvas({
             height={
               canvasHeight
             }
+
             onMouseDown={
               startDrawing
             }
+
             onMouseMove={
               draw
             }
+
             onMouseUp={
               stopDrawing
             }
+
             onMouseLeave={
               stopDrawing
             }
+
             onTouchStart={
               startDrawing
             }
+
             onTouchMove={
               draw
             }
+
             onTouchEnd={
               stopDrawing
             }
+
             className="cursor-crosshair block touch-none"
           />
         </div>
@@ -652,22 +812,27 @@ export default function DrawingCanvas({
 
       <div className="flex flex-wrap gap-2 justify-between items-center w-full px-2">
         <span className="text-[11px] font-bold text-[#8c706e]">
-          {hasUnsavedChanges
-            ? '⚠️ มีการแก้ไขที่ยังไม่ได้บันทึก กรุณากด "บันทึกคำตอบข้อนี้"'
+          {isUploading
+            ? "⏳ กำลังบันทึกคำตอบอัตโนมัติ..."
+            : hasUnsavedChanges
+            ? "⏳ กำลังรอบันทึกอัตโนมัติ..."
             : value
-            ? "✓ คำตอบข้อนี้บันทึกแล้ว"
-            : '💡 คัดเสร็จแล้ว กรุณากด "บันทึกคำตอบข้อนี้"'}
+            ? "✓ บันทึกคำตอบอัตโนมัติแล้ว"
+            : "✍️ เขียนคำตอบได้เลย ระบบจะบันทึกให้อัตโนมัติ"}
         </span>
 
         <div className="flex gap-2">
           <button
             type="button"
+
             onClick={
               clearCanvas
             }
+
             disabled={
               isUploading
             }
+
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#8f4a46] hover:text-[#8e171c] bg-[#ffd0cc]/40 hover:bg-[#ffd0cc]/70 rounded-full transition-all cursor-pointer disabled:opacity-50"
           >
             ล้างสมุดคัด
@@ -675,13 +840,16 @@ export default function DrawingCanvas({
 
           <button
             type="button"
+
             onClick={
-              saveToCloud
+              handleManualSave
             }
+
             disabled={
               isUploading ||
               !hasUnsavedChanges
             }
+
             className={`flex items-center gap-1 px-4 py-1.5 text-xs font-bold text-white rounded-full transition-all ${
               isUploading
                 ? "bg-gray-400 cursor-not-allowed animate-pulse"
@@ -693,12 +861,12 @@ export default function DrawingCanvas({
             }`}
           >
             {isUploading
-              ? "กำลังบีบอัด..."
+              ? "กำลังบันทึก..."
               : hasUnsavedChanges
-              ? "💾 บันทึกคำตอบข้อนี้"
+              ? "💾 บันทึกตอนนี้"
               : value
-              ? "✓ บันทึกสำเร็จแล้ว"
-              : "ยังไม่มีคำตอบ"}
+              ? "✓ บันทึกแล้ว"
+              : "บันทึกอัตโนมัติ"}
           </button>
         </div>
       </div>
