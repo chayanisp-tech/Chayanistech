@@ -7,7 +7,14 @@ import {
   DEFAULT_SUBMISSIONS,
 } from "./lib/mockData";
 import { initAuth, getAccessToken, logout, googleSignIn, db } from "./lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  query,
+  where,
+} from "firebase/firestore";
 import {
   searchDatabaseSpreadsheet,
   createDatabaseSpreadsheet,
@@ -257,15 +264,6 @@ export default function App() {
       try {
         console.log("🔥 กำลังอัปเดตรายชื่อและข้อสอบล่าสุดจากระบบคลาวด์ Firebase...");
         
-        let fStudents: Student[] = [];
-        try {
-          // ดึงเฉพาะคอลเลกชันนักเรียน
-          const studentsSnapshot = await getDocs(collection(db, "students"));
-          fStudents = studentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
-          console.log(`✅ ดึงรายชื่อนักเรียนสำเร็จ (${fStudents.length} คน)`);
-        } catch (studentErr) {
-          console.error("❌ ดึงข้อมูลรายชื่อนักเรียนจาก Firestore ล้มเหลว:", studentErr);
-        }
 
         let fExams: Exam[] = [];
         try {
@@ -277,33 +275,9 @@ export default function App() {
           console.error("❌ ดึงข้อมูลข้อสอบจาก Firestore ล้มเหลว:", examErr);
         }
 
-        let fSubmissions: Submission[] = [];
-        try {
-          // ดึงข้อมูลประวัติการส่งจาก Firestore เพื่ออัปเดตงานเขียนตอบล่าสุดและภาพวาดเขียน (Drawing)
-          const submissionsSnapshot = await getDocs(collection(db, "submissions"));
-          fSubmissions = submissionsSnapshot.docs.map(doc => ({ submissionId: doc.id, ...doc.data() })) as Submission[];
-          console.log(`✅ ดึงข้อมูลประวัติส่งข้อสอบสำเร็จ (${fSubmissions.length} รายการ)`);
-        } catch (subErr) {
-          console.error("❌ ดึงข้อมูลประวัติส่งข้อสอบจาก Firestore ล้มเหลว:", subErr);
-          fSubmissions = localSubmissions ? JSON.parse(localSubmissions) : [];
-        }
-
         const fSettings = localSettings ? JSON.parse(localSettings) : null;
           
-        if (fStudents && fStudents.length > 0) {
-          setStudents(fStudents);
-          localStorage.setItem("exam_students", JSON.stringify(fStudents));
-        } else if (localStudents) {
-          try {
-            const parsedLocalStudents = JSON.parse(localStudents);
-            if (parsedLocalStudents.length > 0) {
-              console.log("☁️ ระบบตรวจพบข้อมูลนักเรียนในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
-              syncStudentsToFirestore(parsedLocalStudents).catch(err => console.error(err));
-            }
-          } catch (pErr) {
-            console.error("Error parsing local students:", pErr);
-          }
-        }
+      
 
         if (fExams && fExams.length > 0) {
           setExams(fExams);
@@ -320,20 +294,7 @@ export default function App() {
           }
         }
 
-        if (fSubmissions && fSubmissions.length > 0) {
-          setSubmissions(fSubmissions);
-          localStorage.setItem("exam_submissions", JSON.stringify(fSubmissions));
-        } else if (localSubmissions) {
-          try {
-            const parsedLocalSubmissions = JSON.parse(localSubmissions);
-            if (parsedLocalSubmissions.length > 0) {
-              console.log("☁️ ระบบตรวจพบประวัติส่งข้อสอบในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
-              syncSubmissionsToFirestore(parsedLocalSubmissions).catch(err => console.error(err));
-            }
-          } catch (pErr) {
-            console.error("Error parsing local submissions:", pErr);
-          }
-        }
+  
 
         if (fSettings) {
           setSettings(fSettings);
@@ -519,13 +480,98 @@ export default function App() {
   return () => unsubscribe();
 }, []);
 
-  const handleEnterExamRoom = (studentId: string) => {
-    const studentObj = students.find((s) => s.id === studentId);
-    if (studentObj) {
-      setCurrentStudent(studentObj);
-      setCurrentScreen("student_exam");
+  const handleEnterExamRoom = async (
+  studentId: string
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    // ดึงข้อมูลนักเรียนเฉพาะคนนี้ 1 document
+    const studentRef = doc(db, "students", studentId);
+    const studentSnapshot = await getDoc(studentRef);
+
+    if (!studentSnapshot.exists()) {
+      return {
+        success: false,
+        message:
+          "ไม่พบรหัสนักเรียนนี้ในฐานข้อมูล กรุณาตรวจสอบอีกครั้ง",
+      };
     }
-  };
+
+    const studentObj = {
+      id: studentSnapshot.id,
+      ...studentSnapshot.data(),
+    } as Student;
+
+    // ดึงเฉพาะผลสอบของนักเรียนคนนี้
+    const submissionsQuery = query(
+      collection(db, "submissions"),
+      where("studentId", "==", studentId)
+    );
+
+    const submissionsSnapshot =
+      await getDocs(submissionsQuery);
+
+    const studentSubmissions =
+      submissionsSnapshot.docs.map((docSnapshot) => ({
+        submissionId: docSnapshot.id,
+        ...docSnapshot.data(),
+      })) as Submission[];
+
+    // ตรวจเฉพาะข้อสอบที่เปิดอยู่
+    const activeExams = exams.filter(
+      (exam) => exam.isActive
+    );
+
+    const completedExamIds = new Set(
+      studentSubmissions
+        .filter(
+          (submission) =>
+            submission.status === "สมบูรณ์"
+        )
+        .map(
+          (submission) => submission.examId
+        )
+    );
+
+    const hasAvailableExam =
+      activeExams.some(
+        (exam) =>
+          !completedExamIds.has(exam.id)
+      );
+
+    if (
+      activeExams.length > 0 &&
+      !hasAvailableExam
+    ) {
+      return {
+        success: false,
+        message:
+          "คุณได้ส่งคำตอบของข้อสอบที่เปิดอยู่ครบแล้ว",
+      };
+    }
+
+    setCurrentStudent(studentObj);
+
+    // เก็บเฉพาะ submission ของนักเรียนคนนี้
+    setSubmissions(studentSubmissions);
+
+    setCurrentScreen("student_exam");
+
+    return {
+      success: true,
+    };
+  } catch (error) {
+    console.error(
+      "Student lookup failed:",
+      error
+    );
+
+    return {
+      success: false,
+      message:
+        "ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง",
+    };
+  }
+};
 
  const handleExamSubmitted = async (submission: Submission) => {
   if (isSubmittingRef.current) return;
