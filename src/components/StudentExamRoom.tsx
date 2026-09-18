@@ -70,6 +70,17 @@ export default function StudentExamRoom({
 
   const answersRef = useRef(answers);
   const selectedExamRef = useRef(selectedExam);
+  const deadlineRef = useRef<number | null>(null);
+
+  const sessionKey = `chinese_exam_session_${student.id}`;
+
+  const clearSavedExamSession = () => {
+    try {
+      localStorage.removeItem(sessionKey);
+    } catch (error) {
+      console.error("ไม่สามารถล้าง session ข้อสอบ:", error);
+    }
+  };
 
   useEffect(() => {
     answersRef.current = answers;
@@ -84,12 +95,211 @@ export default function StudentExamRoom({
   }, [cheatCount]);
 
   /**
-   * ระบบตรวจจับพฤติกรรมผิดกฎเดิม
+   * ========================================
+   * RESTORE EXAM SESSION
+   * ========================================
    *
-   * หมายเหตุ:
-   * รอบถัดไปเราจะปรับระบบนี้ใหม่
-   * เพื่อแก้ false positive จาก refresh,
-   * การหมุนจอ, window blur และเน็ตหลุด
+   * กู้คืนข้อสอบหลัง:
+   * - Refresh
+   * - Browser crash
+   * - เว็บปิดแล้วเปิดใหม่
+   * - อินเทอร์เน็ตสะดุด
+   */
+  useEffect(() => {
+    if (isExamStarted) return;
+
+    try {
+      const rawSession = localStorage.getItem(sessionKey);
+
+      if (!rawSession) return;
+
+      const savedSession = JSON.parse(rawSession);
+
+      if (savedSession.studentId !== student.id) {
+        localStorage.removeItem(sessionKey);
+        return;
+      }
+
+      const examStillActive = activeExams.some(
+        (exam) =>
+          exam.id === savedSession.examId &&
+          exam.isActive
+      );
+
+      const alreadySubmitted = submissions.some(
+        (submission) =>
+          submission.studentId === student.id &&
+          submission.examId === savedSession.examId &&
+          (
+            submission.status === "สมบูรณ์" ||
+            submission.status === "ทุจริต"
+          )
+      );
+
+      /**
+       * ถ้าข้อสอบปิดแล้ว
+       * หรือส่งไปแล้ว
+       * ไม่ต้อง Resume
+       */
+      if (!examStillActive || alreadySubmitted) {
+        localStorage.removeItem(sessionKey);
+        return;
+      }
+
+      if (
+        !savedSession.exam ||
+        !savedSession.deadlineAt
+      ) {
+        localStorage.removeItem(sessionKey);
+        return;
+      }
+
+      const restoredExam: Exam =
+        savedSession.exam;
+
+      const restoredAnswers =
+        savedSession.answers || {};
+
+      const restoredQuestionIndex =
+        Number(savedSession.currentQuestionIndex) || 0;
+
+      const restoredCheatCount =
+        Number(savedSession.cheatCount) || 0;
+
+      const deadline =
+        Number(savedSession.deadlineAt);
+
+      const remainingSeconds = Math.max(
+        0,
+        Math.ceil(
+          (deadline - Date.now()) / 1000
+        )
+      );
+
+      deadlineRef.current = deadline;
+      selectedExamRef.current = restoredExam;
+      answersRef.current = restoredAnswers;
+      cheatCountRef.current = restoredCheatCount;
+
+      setSelectedExam(restoredExam);
+      setAnswers(restoredAnswers);
+
+      setCurrentQuestionIndex(
+        Math.max(
+          0,
+          Math.min(
+            restoredQuestionIndex,
+            restoredExam.questions.length - 1
+          )
+        )
+      );
+
+      setCheatCount(restoredCheatCount);
+      setSecondsRemaining(remainingSeconds);
+
+      setShowReviewModal(false);
+      setConfirmSubmitChecked(false);
+
+      setIsExamStarted(true);
+
+      console.log(
+        "Resume exam:",
+        restoredExam.id,
+        "remaining:",
+        remainingSeconds
+      );
+    } catch (error) {
+      console.error(
+        "ไม่สามารถกู้คืนข้อสอบเดิม:",
+        error
+      );
+
+      localStorage.removeItem(sessionKey);
+    }
+  }, [
+    student.id,
+    activeExams,
+    submissions,
+    sessionKey,
+    isExamStarted,
+  ]);
+
+  /**
+   * ========================================
+   * AUTOSAVE
+   * ========================================
+   *
+   * เก็บสถานะข้อสอบลงเครื่องอัตโนมัติ
+   * หลังมีการเปลี่ยนแปลงประมาณ 300ms
+   */
+  useEffect(() => {
+    if (
+      !isExamStarted ||
+      !selectedExam ||
+      !deadlineRef.current
+    ) {
+      return;
+    }
+
+    const saveTimer = window.setTimeout(() => {
+      try {
+        const sessionData = {
+          version: 1,
+
+          studentId: student.id,
+
+          examId: selectedExam.id,
+
+          /**
+           * เก็บข้อสอบหลังสุ่มแล้ว
+           * เพื่อ Refresh แล้วลำดับข้อ
+           * และตัวเลือกไม่เปลี่ยนใหม่
+           */
+          exam: selectedExam,
+
+          answers,
+
+          currentQuestionIndex,
+
+          cheatCount,
+
+          deadlineAt: deadlineRef.current,
+
+          updatedAt: Date.now(),
+        };
+
+        localStorage.setItem(
+          sessionKey,
+          JSON.stringify(sessionData)
+        );
+      } catch (error) {
+        console.error(
+          "Autosave exam session failed:",
+          error
+        );
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(saveTimer);
+    };
+  }, [
+    answers,
+    currentQuestionIndex,
+    cheatCount,
+    isExamStarted,
+    selectedExam,
+    student.id,
+    sessionKey,
+  ]);
+
+  /**
+   * ========================================
+   * ANTI-CHEAT เดิม
+   * ========================================
+   *
+   * ตอนนี้ยังคงไว้ก่อน
+   * รอบถัดไปเราจะปรับ false positive
    */
   useEffect(() => {
     if (!isExamStarted) return;
@@ -97,7 +307,6 @@ export default function StudentExamRoom({
     const handleCheatDetected = (actionType: string) => {
       const newCount = cheatCountRef.current + 1;
 
-      // อัปเดต ref ทันที ป้องกัน event ซ้อนกันเร็วเกินไป
       cheatCountRef.current = newCount;
       setCheatCount(newCount);
 
@@ -126,7 +335,8 @@ export default function StudentExamRoom({
           `🛑 [ระบบทำการล็อกอัตโนมัติเนื่องจากทุจริต]\n\nคุณทำผิดกฎความปลอดภัยครบ 3 ครั้ง ระบบได้ทำการบังคับส่งกระดาษคำตอบ และตัดสินว่า "ทุจริตการสอบ" คะแนนในรายวิชานี้ถือเป็นโมฆะ (ได้ 0 คะแนน) และคุณหมดสิทธิ์เข้าสอบวิชานี้อีกต่อไป`
         );
 
-        const currentAnswers = answersRef.current;
+        const currentAnswers =
+          answersRef.current;
 
         const originalAnswers =
           mapShuffledAnswersToOriginal(
@@ -154,15 +364,12 @@ export default function StudentExamRoom({
           }
         });
 
-        /**
-         * 1 นักเรียน + 1 ข้อสอบ
-         * ใช้ document เดียวเสมอ
-         */
         const submissionId =
           `${exam.id}_${student.id}`;
 
         const newSubmission: Submission = {
           submissionId,
+
           studentId: student.id,
           studentName: student.name,
           studentClassName: student.className,
@@ -191,6 +398,14 @@ export default function StudentExamRoom({
           newSubmission
         )
           .then(() => {
+            /**
+             * ส่งสำเร็จแล้ว
+             * ต้องล้าง session เดิม
+             */
+            clearSavedExamSession();
+
+            deadlineRef.current = null;
+
             setIsExamStarted(false);
             setSelectedExam(null);
 
@@ -216,8 +431,7 @@ export default function StudentExamRoom({
 
     const handleVisibilityChange = () => {
       if (
-        document.visibilityState ===
-        "hidden"
+        document.visibilityState === "hidden"
       ) {
         handleCheatDetected(
           "สลับหน้าจอ หรือ เปลี่ยนแท็บเบราว์เซอร์"
@@ -298,6 +512,9 @@ export default function StudentExamRoom({
     onExamSubmitted,
   ]);
 
+  /**
+   * คำตอบอัตนัยแบบข้อความ
+   */
   const handleSubjectiveTextChange = (
     questionId: string,
     text: string
@@ -312,6 +529,9 @@ export default function StudentExamRoom({
     }));
   };
 
+  /**
+   * คำตอบอัตนัยแบบวาด
+   */
   const handleSubjectiveDrawingChange = (
     questionId: string,
     drawingDataUrl: string
@@ -331,39 +551,10 @@ export default function StudentExamRoom({
   );
 
   /**
-   * Timer
+   * ========================================
+   * เริ่มทำข้อสอบ
+   * ========================================
    */
-  useEffect(() => {
-    if (
-      !isExamStarted ||
-      !selectedExam ||
-      secondsRemaining <= 0
-    ) {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-
-          handleSubmitExam(true);
-
-          return 0;
-        }
-
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () =>
-      clearInterval(timer);
-  }, [
-    isExamStarted,
-    selectedExam,
-    secondsRemaining,
-  ]);
-
   const handleStartExam = (
     exam: Exam
   ) => {
@@ -381,17 +572,16 @@ export default function StudentExamRoom({
             q.options.map(
               (opt, idx) => ({
                 text: opt,
+
                 isCorrect:
-                  idx ===
-                  q.answerIndex,
+                  idx === q.answerIndex,
+
                 originalIndex: idx,
               })
             );
 
           const shuffledOptions =
-            shuffleArray(
-              mappedOptions
-            );
+            shuffleArray(mappedOptions);
 
           const newAnswerIndex =
             shuffledOptions.findIndex(
@@ -410,7 +600,8 @@ export default function StudentExamRoom({
 
             options:
               shuffledOptions.map(
-                (opt) => opt.text
+                (opt) =>
+                  opt.text
               ),
 
             answerIndex:
@@ -425,9 +616,33 @@ export default function StudentExamRoom({
 
     const randomizedExam = {
       ...exam,
+
       questions:
         randomizedQuestions,
     };
+
+    /**
+     * Deadline จริง
+     *
+     * เช่น เริ่ม 11:00
+     * เวลา 30 นาที
+     * deadline = 11:30
+     *
+     * Refresh แล้วจะไม่กลับมา 30 นาทีใหม่
+     */
+    const deadline =
+      Date.now() +
+      exam.timeLimitMinutes *
+        60 *
+        1000;
+
+    deadlineRef.current =
+      deadline;
+
+    selectedExamRef.current =
+      randomizedExam;
+
+    answersRef.current = {};
 
     setSelectedExam(
       randomizedExam
@@ -447,6 +662,87 @@ export default function StudentExamRoom({
     setIsExamStarted(true);
   };
 
+  /**
+   * ========================================
+   * TIMER
+   * ========================================
+   *
+   * ใช้ Deadline จริง
+   * แทนการลบทีละ 1 วินาที
+   */
+  useEffect(() => {
+    if (
+      !isExamStarted ||
+      !selectedExam ||
+      !deadlineRef.current
+    ) {
+      return;
+    }
+
+    let hasTriggeredTimeUp =
+      false;
+
+    const updateTimer = () => {
+      if (!deadlineRef.current) {
+        return;
+      }
+
+      const remaining = Math.max(
+        0,
+        Math.ceil(
+          (
+            deadlineRef.current -
+            Date.now()
+          ) / 1000
+        )
+      );
+
+      setSecondsRemaining(
+        remaining
+      );
+
+      if (
+        remaining <= 0 &&
+        !hasTriggeredTimeUp
+      ) {
+        hasTriggeredTimeUp =
+          true;
+
+        /**
+         * ส่งคำตอบทันทีเมื่อหมดเวลา
+         *
+         * ใช้ event เพื่อหลีกเลี่ยงปัญหา
+         * function declaration order
+         */
+        window.dispatchEvent(
+          new Event(
+            "exam-time-up"
+          )
+        );
+      }
+    };
+
+    updateTimer();
+
+    const timer =
+      window.setInterval(
+        updateTimer,
+        1000
+      );
+
+    return () => {
+      window.clearInterval(
+        timer
+      );
+    };
+  }, [
+    isExamStarted,
+    selectedExam,
+  ]);
+
+  /**
+   * แปลงเวลาเป็น HH:MM:SS
+   */
   const formatTime = (
     totalSeconds: number
   ) => {
@@ -475,19 +771,25 @@ export default function StudentExamRoom({
     );
   };
 
+  /**
+   * เลือก Choice
+   */
   const handleSelectOption = (
     questionId: string,
     optionIndex: number
   ) => {
     setAnswers((prev) => ({
       ...prev,
+
       [questionId]:
         optionIndex,
     }));
   };
 
   /**
+   * ========================================
    * ส่งข้อสอบ
+   * ========================================
    */
   const executeSubmitExam =
     async () => {
@@ -537,8 +839,10 @@ export default function StudentExamRoom({
             ) {
               if (
                 ans &&
-                (ans.text?.trim() ||
-                  ans.drawing)
+                (
+                  ans.text?.trim() ||
+                  ans.drawing
+                )
               ) {
                 actualAnsweredCount++;
               }
@@ -560,10 +864,6 @@ export default function StudentExamRoom({
           }
         );
 
-        /**
-         * deterministic ID
-         * ป้องกัน submission ซ้ำ
-         */
         const submissionId =
           `${exam.id}_${student.id}`;
 
@@ -580,11 +880,14 @@ export default function StudentExamRoom({
             studentClassName:
               student.className,
 
-            examId: exam.id,
+            examId:
+              exam.id,
+
             examTitle:
               exam.title,
 
-            score: autoScore,
+            score:
+              autoScore,
 
             totalPoints,
 
@@ -604,9 +907,6 @@ export default function StudentExamRoom({
               originalAnswers,
           };
 
-        /**
-         * เขียนลง Firestore เพียง 1 document
-         */
         await setDoc(
           doc(
             db,
@@ -616,16 +916,39 @@ export default function StudentExamRoom({
           newSubmission
         );
 
-        setIsExamStarted(false);
+        /**
+         * ส่งสำเร็จ
+         * จึงค่อยลบ Autosave
+         *
+         * ถ้าส่งไม่สำเร็จ
+         * session จะยังอยู่
+         * ทำให้เด็กกลับมาส่งใหม่ได้
+         */
+        clearSavedExamSession();
 
-        setSelectedExam(null);
+        deadlineRef.current =
+          null;
 
-        cheatCountRef.current = 0;
+        setIsExamStarted(
+          false
+        );
+
+        setSelectedExam(
+          null
+        );
+
+        cheatCountRef.current =
+          0;
+
         setCheatCount(0);
 
-        setShowReviewModal(false);
+        setShowReviewModal(
+          false
+        );
 
-        setConfirmSubmitChecked(false);
+        setConfirmSubmitChecked(
+          false
+        );
 
         onExamSubmitted(
           newSubmission
@@ -640,29 +963,52 @@ export default function StudentExamRoom({
           "ไม่สามารถส่งข้อสอบได้ในขณะนี้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง"
         );
       } finally {
-        setIsSubmitting(false);
+        setIsSubmitting(
+          false
+        );
       }
     };
 
+  /**
+   * Timer ส่ง event มาที่นี่
+   */
+  useEffect(() => {
+    const handleTimeUp =
+      () => {
+        executeSubmitExam();
+      };
+
+    window.addEventListener(
+      "exam-time-up",
+      handleTimeUp
+    );
+
+    return () => {
+      window.removeEventListener(
+        "exam-time-up",
+        handleTimeUp
+      );
+    };
+  });
+
+  /**
+   * ปุ่มส่งข้อสอบ
+   */
   const handleSubmitExam = (
     isTimeUp = false
   ) => {
     if (isTimeUp) {
-      alert(
-        "🚨 หมดเวลาทำข้อสอบ! ระบบกำลังทำการส่งกระดาษคำตอบของคุณโดยอัตโนมัติ..."
-      );
-
       executeSubmitExam();
     } else {
-      setShowReviewModal(true);
+      setShowReviewModal(
+        true
+      );
 
-      setConfirmSubmitChecked(false);
+      setConfirmSubmitChecked(
+        false
+      );
     }
   };
-
-  /**
-   * หน้าเลือกข้อสอบ
-   */
   if (!selectedExam) {
     return (
       <div className="min-h-screen flex flex-col bg-[#fff8f7] font-sans pt-24 px-6 pb-12 text-[#251817]">
