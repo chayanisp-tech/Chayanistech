@@ -86,10 +86,33 @@ export async function testConnection() {
 }
 
 // 2. Exams sync
+const createPublicExam = (exam: Exam) => ({
+  ...exam,
+  questions: exam.questions.map(({ answerIndex: _answerIndex, ...question }) => question),
+});
+
+const createAnswerKey = (exam: Exam) => ({
+  examId: exam.id,
+  questions: exam.questions.map((question) => ({
+    id: question.id,
+    type: question.type || "choice",
+    answerIndex: question.answerIndex,
+    points: question.points,
+  })),
+});
+
 export async function saveExamToFirestore(exam: Exam): Promise<void> {
   const path = `exams/${exam.id}`;
   try {
-    await setDoc(doc(db, "exams", exam.id), exam);
+    const batch = writeBatch(db);
+
+    // Keep the legacy document during migration so the teacher flow and the
+    // current student client continue to work until the read path is switched.
+    batch.set(doc(db, "exams", exam.id), exam);
+    batch.set(doc(db, "exams_public", exam.id), createPublicExam(exam));
+    batch.set(doc(db, "exam_answer_keys", exam.id), createAnswerKey(exam));
+
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -98,7 +121,11 @@ export async function saveExamToFirestore(exam: Exam): Promise<void> {
 export async function deleteExamFromFirestore(examId: string): Promise<void> {
   const path = `exams/${examId}`;
   try {
-    await deleteDoc(doc(db, "exams", examId));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "exams", examId));
+    batch.delete(doc(db, "exams_public", examId));
+    batch.delete(doc(db, "exam_answer_keys", examId));
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
