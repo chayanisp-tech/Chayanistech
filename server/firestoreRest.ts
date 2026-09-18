@@ -90,10 +90,12 @@ export async function getServerDocument(
 ): Promise<Record<string, any> | null> {
   const account = getServiceAccount();
   const token = await getAccessToken(account);
+  const databaseId = process.env.FIREBASE_DATABASE_ID || "(default)";
   const path = [collection, documentId].map(encodeURIComponent).join("/");
   const url = "https://firestore.googleapis.com/v1/projects/" +
     encodeURIComponent(account.project_id) +
-    "/databases/(default)/documents/" + path;
+    "/databases/" + encodeURIComponent(databaseId) +
+    "/documents/" + path;
   const response = await fetch(url, {
     headers: { authorization: "Bearer " + token },
   });
