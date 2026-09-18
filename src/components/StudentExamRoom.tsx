@@ -71,6 +71,7 @@ export default function StudentExamRoom({
   const answersRef = useRef(answers);
   const selectedExamRef = useRef(selectedExam);
   const deadlineRef = useRef<number | null>(null);
+  const hiddenStartedAtRef = useRef<number | null>(null);
 
   const sessionKey = `chinese_exam_session_${student.id}`;
 
@@ -295,24 +296,39 @@ export default function StudentExamRoom({
 
   /**
    * ========================================
-   * ANTI-CHEAT เดิม
+  /**
+   * ========================================
+   * ANTI-CHEAT รุ่นลด False Positive
    * ========================================
    *
-   * ตอนนี้ยังคงไว้ก่อน
-   * รอบถัดไปเราจะปรับ false positive
+   * หลักการ:
+   * - ไม่ใช้ window.blur
+   * - ออกจากหน้าไม่เกิน 5 วินาที = ไม่นับ
+   * - Refresh / Browser crash = ไม่นับ
+   * - หมุนจอ = ไม่นับ
+   * - Copy จากโจทย์ = นับ
+   * - Copy ในช่องอัตนัย = อนุญาต
+   * - Print Screen = นับ
    */
   useEffect(() => {
     if (!isExamStarted) return;
 
-    const handleCheatDetected = (actionType: string) => {
-      const newCount = cheatCountRef.current + 1;
+    const VISIBILITY_GRACE_MS = 5000;
 
-      cheatCountRef.current = newCount;
-      setCheatCount(newCount);
+    const handleCheatDetected = (actionType: string) => {
+      const newCount =
+        cheatCountRef.current + 1;
+
+      cheatCountRef.current =
+        newCount;
+
+      setCheatCount(
+        newCount
+      );
 
       if (newCount === 1) {
         alert(
-          `⚠️ [คำเตือนครั้งที่ 1]\nระบบตรวจพบการ "${actionType}"\nกรุณาทำข้อสอบในหน้าจอข้อสอบด้วยความซื่อสัตย์และห้ามละสายตาเด็ดขาด`
+          `⚠️ [คำเตือนครั้งที่ 1]\nระบบตรวจพบการ "${actionType}"\n\nกรุณากลับมาทำข้อสอบในหน้าจอสอบและหลีกเลี่ยงการออกจากหน้าจอระหว่างสอบ`
         );
 
         return;
@@ -320,19 +336,20 @@ export default function StudentExamRoom({
 
       if (newCount === 2) {
         alert(
-          `❌ [คำเตือนครั้งที่ 2]\nตรวจพบการ "${actionType}" อีกครั้ง!\n🚨 เหลืออีก "ครั้งสุดท้าย" เท่านั้น หากระบบตรวจพบพฤติกรรมทุจริตอีกเพียงครั้งเดียว จะถูกบังคับส่งกระดาษคำตอบและปรับตกทันที`
+          `❌ [คำเตือนครั้งที่ 2]\nระบบตรวจพบการ "${actionType}" อีกครั้ง\n\nเหลือคำเตือนอีก 1 ครั้ง ก่อนระบบบังคับส่งข้อสอบ`
         );
 
         return;
       }
 
       if (newCount >= 3) {
-        const exam = selectedExamRef.current;
+        const exam =
+          selectedExamRef.current;
 
         if (!exam) return;
 
         alert(
-          `🛑 [ระบบทำการล็อกอัตโนมัติเนื่องจากทุจริต]\n\nคุณทำผิดกฎความปลอดภัยครบ 3 ครั้ง ระบบได้ทำการบังคับส่งกระดาษคำตอบ และตัดสินว่า "ทุจริตการสอบ" คะแนนในรายวิชานี้ถือเป็นโมฆะ (ได้ 0 คะแนน) และคุณหมดสิทธิ์เข้าสอบวิชานี้อีกต่อไป`
+          `🛑 ระบบตรวจพบการออกจากเงื่อนไขการสอบครบ 3 ครั้ง\n\nระบบจะส่งข้อสอบและบันทึกสถานะไว้เพื่อให้ครูตรวจสอบ`
         );
 
         const currentAnswers =
@@ -347,22 +364,34 @@ export default function StudentExamRoom({
         let totalPoints = 0;
         let actualAnsweredCount = 0;
 
-        exam.questions.forEach((q) => {
-          totalPoints += q.points;
+        exam.questions.forEach(
+          (q) => {
+            totalPoints +=
+              q.points;
 
-          const ans = currentAnswers[q.id];
+            const ans =
+              currentAnswers[q.id];
 
-          if (q.type === "subjective") {
             if (
-              ans &&
-              (ans.text?.trim() || ans.drawing)
+              q.type ===
+              "subjective"
+            ) {
+              if (
+                ans &&
+                (
+                  ans.text?.trim() ||
+                  ans.drawing
+                )
+              ) {
+                actualAnsweredCount++;
+              }
+            } else if (
+              ans !== undefined
             ) {
               actualAnsweredCount++;
             }
-          } else if (ans !== undefined) {
-            actualAnsweredCount++;
           }
-        });
+        );
 
         const submissionId =
           `${exam.id}_${student.id}`;
@@ -370,23 +399,39 @@ export default function StudentExamRoom({
         const newSubmission: Submission = {
           submissionId,
 
-          studentId: student.id,
-          studentName: student.name,
-          studentClassName: student.className,
+          studentId:
+            student.id,
 
-          examId: exam.id,
-          examTitle: exam.title,
+          studentName:
+            student.name,
+
+          studentClassName:
+            student.className,
+
+          examId:
+            exam.id,
+
+          examTitle:
+            exam.title,
 
           score: 0,
+
           totalPoints,
-          answeredCount: actualAnsweredCount,
-          totalQuestions: exam.questions.length,
 
-          submittedAt: new Date().toISOString(),
+          answeredCount:
+            actualAnsweredCount,
 
-          status: "ทุจริต",
+          totalQuestions:
+            exam.questions.length,
 
-          answers: originalAnswers,
+          submittedAt:
+            new Date().toISOString(),
+
+          status:
+            "ทุจริต",
+
+          answers:
+            originalAnswers,
         };
 
         setDoc(
@@ -398,18 +443,25 @@ export default function StudentExamRoom({
           newSubmission
         )
           .then(() => {
-            /**
-             * ส่งสำเร็จแล้ว
-             * ต้องล้าง session เดิม
-             */
             clearSavedExamSession();
 
-            deadlineRef.current = null;
+            deadlineRef.current =
+              null;
 
-            setIsExamStarted(false);
-            setSelectedExam(null);
+            hiddenStartedAtRef.current =
+              null;
 
-            cheatCountRef.current = 0;
+            setIsExamStarted(
+              false
+            );
+
+            setSelectedExam(
+              null
+            );
+
+            cheatCountRef.current =
+              0;
+
             setCheatCount(0);
 
             onExamSubmitted(
@@ -429,50 +481,167 @@ export default function StudentExamRoom({
       }
     };
 
-    const handleVisibilityChange = () => {
-      if (
-        document.visibilityState === "hidden"
-      ) {
-        handleCheatDetected(
-          "สลับหน้าจอ หรือ เปลี่ยนแท็บเบราว์เซอร์"
-        );
-      }
-    };
+    /**
+     * ========================================
+     * ตรวจการออกจากหน้า
+     * ========================================
+     *
+     * hidden:
+     * เริ่มจับเวลา
+     *
+     * visible:
+     * ตรวจว่าออกไปกี่วินาที
+     */
+    const handleVisibilityChange =
+      () => {
+        if (
+          document.visibilityState ===
+          "hidden"
+        ) {
+          hiddenStartedAtRef.current =
+            Date.now();
 
-    const handleWindowBlur = () => {
-      handleCheatDetected(
-        "คลิกออกจากหน้าต่างข้อสอบ"
-      );
-    };
+          return;
+        }
 
+        if (
+          document.visibilityState ===
+          "visible"
+        ) {
+          const hiddenAt =
+            hiddenStartedAtRef.current;
+
+          hiddenStartedAtRef.current =
+            null;
+
+          if (!hiddenAt) {
+            return;
+          }
+
+          const hiddenDuration =
+            Date.now() -
+            hiddenAt;
+
+          /**
+           * น้อยกว่า 5 วินาที
+           * ไม่ถือว่าผิดกฎ
+           */
+          if (
+            hiddenDuration <
+            VISIBILITY_GRACE_MS
+          ) {
+            console.log(
+              "Short visibility change ignored:",
+              hiddenDuration
+            );
+
+            return;
+          }
+
+          const secondsAway =
+            Math.round(
+              hiddenDuration /
+                1000
+            );
+
+          handleCheatDetected(
+            `ออกจากหน้าข้อสอบประมาณ ${secondsAway} วินาที`
+          );
+        }
+      };
+
+    /**
+     * ========================================
+     * COPY
+     * ========================================
+     *
+     * ช่อง textarea / input
+     * อนุญาตให้ copy ได้
+     *
+     * ส่วนโจทย์และตัวเลือก
+     * ป้องกัน copy
+     */
     const handleCopy = (
       e: ClipboardEvent
     ) => {
+      const target =
+        e.target as HTMLElement | null;
+
+      if (target) {
+        const tagName =
+          target.tagName?.toLowerCase();
+
+        const isEditable =
+          tagName === "textarea" ||
+          tagName === "input" ||
+          target.isContentEditable;
+
+        if (isEditable) {
+          return;
+        }
+      }
+
       e.preventDefault();
 
       handleCheatDetected(
-        "คัดลอกข้อความข้อสอบ (Copy)"
+        "คัดลอกข้อความจากข้อสอบ"
       );
     };
 
+    /**
+     * ========================================
+     * PRINT SCREEN
+     * ========================================
+     */
     const handleKeyDown = (
       e: KeyboardEvent
     ) => {
-      if (e.key === "PrintScreen") {
+      if (
+        e.key ===
+        "PrintScreen"
+      ) {
         handleCheatDetected(
           "บันทึกหน้าจอ (Print Screen)"
         );
       }
     };
 
+    /**
+     * ========================================
+     * CONTEXT MENU / LONG PRESS
+     * ========================================
+     *
+     * ป้องกันเมนูคลิกขวาบนโจทย์
+     * แต่ไม่ถือเป็นการทุจริต
+     *
+     * เพื่อไม่ให้เกิด false positive
+     */
+    const handleContextMenu = (
+      e: MouseEvent
+    ) => {
+      const target =
+        e.target as HTMLElement | null;
+
+      if (target) {
+        const tagName =
+          target.tagName?.toLowerCase();
+
+        const isEditable =
+          tagName === "textarea" ||
+          tagName === "input" ||
+          target.isContentEditable;
+
+        if (isEditable) {
+          return;
+        }
+      }
+
+      e.preventDefault();
+    };
+
     document.addEventListener(
       "visibilitychange",
       handleVisibilityChange
-    );
-
-    window.addEventListener(
-      "blur",
-      handleWindowBlur
     );
 
     document.addEventListener(
@@ -485,15 +654,15 @@ export default function StudentExamRoom({
       handleKeyDown
     );
 
+    document.addEventListener(
+      "contextmenu",
+      handleContextMenu
+    );
+
     return () => {
       document.removeEventListener(
         "visibilitychange",
         handleVisibilityChange
-      );
-
-      window.removeEventListener(
-        "blur",
-        handleWindowBlur
       );
 
       document.removeEventListener(
@@ -504,6 +673,11 @@ export default function StudentExamRoom({
       window.removeEventListener(
         "keydown",
         handleKeyDown
+      );
+
+      document.removeEventListener(
+        "contextmenu",
+        handleContextMenu
       );
     };
   }, [
