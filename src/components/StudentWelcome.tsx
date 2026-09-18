@@ -5,7 +5,12 @@ interface StudentWelcomeProps {
   students: Student[];
   submissions: Submission[];
   activeExams: Exam[];
-  onEnterExamRoom: (studentId: string) => void;
+  onEnterExamRoom: (
+  studentId: string
+) => Promise<{
+  success: boolean;
+  message?: string;
+}>;
   onGoToTeacherLogin: () => void;
   onGoToScoreLookup: () => void;
   isLoadingPublicData?: boolean;
@@ -32,40 +37,41 @@ export default function StudentWelcome({
   const [errorText, setErrorText] = useState("");
   const [isValidating, setIsValidating] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (studentId.length < 5) {
-      setErrorText("โปรดระบุรหัสนักเรียนให้ครบ 5 หลัก");
-      return;
+ const handleSubmit = async (
+  e: React.FormEvent
+) => {
+  e.preventDefault();
+
+  if (studentId.length < 5) {
+    setErrorText(
+      "โปรดระบุรหัสนักเรียนให้ครบ 5 หลัก"
+    );
+    return;
+  }
+
+  setIsValidating(true);
+  setErrorText("");
+
+  try {
+    const result =
+      await onEnterExamRoom(studentId);
+
+    if (!result.success) {
+      setErrorText(
+        result.message ||
+          "ไม่สามารถเข้าสู่ห้องสอบได้"
+      );
     }
+  } catch (error) {
+    console.error(error);
 
-    setIsValidating(true);
-    
-    setTimeout(() => {
-      const foundStudent = students.find((s) => s.id === studentId);
-      if (!foundStudent) {
-        setErrorText("ไม่พบรหัสนักเรียนนี้ในฐานข้อมูล กรุณาตรวจสอบอีกครั้งหรือติดต่ออาจารย์ผู้สอน");
-        setIsValidating(false);
-      } else {
-        const studentSubmissions = submissions.filter((s) => s.studentId === studentId);
-        const activeExamsFiltered = activeExams.filter((e) => e.isActive);
-        
-        const completedActiveExams = activeExamsFiltered.filter((e) =>
-          studentSubmissions.some((s) => s.examId === e.id && s.status === "สมบูรณ์")
-        );
-
-        if (activeExamsFiltered.length > 0 && completedActiveExams.length === activeExamsFiltered.length) {
-          setErrorText("คุณได้ส่งคำตอบแล้ว");
-          setIsValidating(false);
-          return;
-        }
-
-        setErrorText("");
-        setIsValidating(false);
-        onEnterExamRoom(studentId);
-      }
-    }, 800);
-  };
+    setErrorText(
+      "เกิดข้อผิดพลาดในการตรวจสอบข้อมูล กรุณาลองใหม่"
+    );
+  } finally {
+    setIsValidating(false);
+  }
+};
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, "").slice(0, 5);
