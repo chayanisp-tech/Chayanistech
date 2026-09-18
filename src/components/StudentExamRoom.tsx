@@ -5,8 +5,7 @@ import PreExamChecklist from "./PreExamChecklist";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
-const [pendingExam, setPendingExam] =
-  useState<Exam | null>(null);
+
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
 
@@ -67,7 +66,9 @@ export default function StudentExamRoom({
 
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [confirmSubmitChecked, setConfirmSubmitChecked] = useState(false);
-
+  const [pendingExam, setPendingExam] =
+  useState<Exam | null>(null);
+  
   const [cheatCount, setCheatCount] = useState(0);
   const cheatCountRef = useRef(0);
 
@@ -1186,10 +1187,26 @@ export default function StudentExamRoom({
       );
     }
   };
-  if (!selectedExam) {
-    return (
-      <div className="min-h-screen flex flex-col bg-[#fff8f7] font-sans pt-24 px-6 pb-12 text-[#251817]">
-        <header className="fixed top-0 left-0 w-full z-50 bg-[#fff8f7] border-b border-[#e0bfbc]/30 h-16 flex items-center">
+if (!selectedExam) {
+  return (
+    <div className="min-h-screen flex flex-col bg-[#fff8f7] font-sans pt-24 px-6 pb-12 text-[#251817]">
+      {pendingExam && (
+        <PreExamChecklist
+          exam={pendingExam}
+          onCancel={() =>
+            setPendingExam(null)
+          }
+          onConfirm={() => {
+            const examToStart = pendingExam;
+
+            setPendingExam(null);
+
+            handleStartExam(examToStart);
+          }}
+        />
+      )}
+
+      <header className="fixed top-0 left-0 w-full z-50 bg-[#fff8f7] border-b border-[#e0bfbc]/30 h-16 flex items-center">
           <div className="flex justify-between items-center px-6 w-full max-w-7xl mx-auto">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[#8e171c] text-3xl">
@@ -1209,24 +1226,6 @@ export default function StudentExamRoom({
               ({student.id})
             </div>
           </div>
-          {pendingExam && (
-  <PreExamChecklist
-    exam={pendingExam}
-    onCancel={() =>
-      setPendingExam(null)
-    }
-    onConfirm={() => {
-      const examToStart =
-        pendingExam;
-
-      setPendingExam(null);
-
-      handleStartExam(
-        examToStart
-      );
-    }}
-  />
-)}
         </header>
 
         <div className="max-w-4xl mx-auto w-full mt-6">
