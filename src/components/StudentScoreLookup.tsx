@@ -1,5 +1,14 @@
 import React, { useState } from "react";
 import { Student, Submission, Exam } from "../types";
+import { db } from "../lib/firebase";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 
 interface StudentScoreLookupProps {
   students: Student[];
@@ -21,31 +30,112 @@ export default function StudentScoreLookup({
   const [errorText, setErrorText] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (studentId.length < 5) {
-      setErrorText("โปรดระบุรหัสนักเรียนให้ครบ 5 หลัก");
-      return;
-    }
+  const handleSearch = async (
+  e: React.FormEvent
+) => {
+  e.preventDefault();
 
-    const foundStudent = students.find((s) => s.id === studentId);
-    if (!foundStudent) {
-      setErrorText("ไม่พบข้อมูลนักเรียนรหัสนี้ในฐานข้อมูล");
+  if (studentId.length < 5) {
+    setErrorText(
+      "โปรดระบุรหัสนักเรียนให้ครบ 5 หลัก"
+    );
+    return;
+  }
+
+  setErrorText("");
+  setHasSearched(false);
+
+  try {
+    // 1. อ่านเฉพาะนักเรียนคนนี้
+    const studentRef = doc(
+      db,
+      "students",
+      studentId
+    );
+
+    const studentSnapshot =
+      await getDoc(studentRef);
+
+    if (!studentSnapshot.exists()) {
+      setErrorText(
+        "ไม่พบข้อมูลนักเรียนรหัสนี้ในฐานข้อมูล"
+      );
+
       setStudentInfo(null);
       setResults([]);
       setHasSearched(true);
+
       return;
     }
 
-    setErrorText("");
-    setStudentInfo(foundStudent);
-    setSearchedId(studentId);
+    const foundStudent = {
+      id: studentSnapshot.id,
+      ...studentSnapshot.data(),
+    } as Student;
 
-    // Filter submissions for this student
-    const studentSubmissions = submissions.filter((s) => s.studentId === studentId);
-    setResults(studentSubmissions);
+    // 2. อ่านเฉพาะผลสอบของนักเรียนคนนี้
+    const submissionQuery = query(
+      collection(db, "submissions"),
+      where(
+        "studentId",
+        "==",
+        studentId
+      )
+    );
+
+    const submissionSnapshot =
+      await getDocs(
+        submissionQuery
+      );
+
+    const studentSubmissions =
+      submissionSnapshot.docs.map(
+        (docSnapshot) => ({
+          submissionId:
+            docSnapshot.id,
+          ...docSnapshot.data(),
+        })
+      ) as Submission[];
+
+    // 3. เรียงผลสอบล่าสุดก่อน
+    studentSubmissions.sort(
+      (a, b) =>
+        new Date(
+          b.submittedAt
+        ).getTime() -
+        new Date(
+          a.submittedAt
+        ).getTime()
+    );
+
+    setStudentInfo(
+      foundStudent
+    );
+
+    setSearchedId(
+      studentId
+    );
+
+    setResults(
+      studentSubmissions
+    );
+
     setHasSearched(true);
-  };
+  } catch (error) {
+    console.error(
+      "Score lookup failed:",
+      error
+    );
+
+    setStudentInfo(null);
+    setResults([]);
+    setHasSearched(true);
+
+    setErrorText(
+      "ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง"
+    );
+  }
+};
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, "").slice(0, 5);
