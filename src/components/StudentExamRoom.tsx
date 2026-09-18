@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
+import PreExamChecklist from "./PreExamChecklist";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
+const [pendingExam, setPendingExam] =
+  useState<Exam | null>(null);
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
 
@@ -1206,6 +1209,24 @@ export default function StudentExamRoom({
               ({student.id})
             </div>
           </div>
+          {pendingExam && (
+  <PreExamChecklist
+    exam={pendingExam}
+    onCancel={() =>
+      setPendingExam(null)
+    }
+    onConfirm={() => {
+      const examToStart =
+        pendingExam;
+
+      setPendingExam(null);
+
+      handleStartExam(
+        examToStart
+      );
+    }}
+  />
+)}
         </header>
 
         <div className="max-w-4xl mx-auto w-full mt-6">
@@ -1357,10 +1378,8 @@ export default function StudentExamRoom({
                           </button>
                         ) : (
                           <button
-                            onClick={() =>
-                              handleStartExam(
-                                exam
-                              )
+                           onClick={() =>
+                            setPendingExam(exam)
                             }
                             className="px-5 py-2.5 bg-[#8e171c] hover:bg-[#8c161b] text-white rounded-full font-bold text-sm transition-all shadow-md shadow-[#8e171c]/10 cursor-pointer"
                           >
