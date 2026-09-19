@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Student, Exam, Question, Submission } from "../types";
 import DrawingCanvas from "./DrawingCanvas";
 import PreExamChecklist from "./PreExamChecklist";
-import { doc, setDoc } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { submitExamForScoring } from "../lib/serverScoring";
 
 
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -62,6 +61,7 @@ export default function StudentExamRoom({
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [secondsRemaining, setSecondsRemaining] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [isExamStarted, setIsExamStarted] = useState(false);
 
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -365,88 +365,17 @@ export default function StudentExamRoom({
             currentAnswers
           );
 
-        let totalPoints = 0;
-        let actualAnsweredCount = 0;
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
 
-        exam.questions.forEach(
-          (q) => {
-            totalPoints +=
-              q.points;
-
-            const ans =
-              currentAnswers[q.id];
-
-            if (
-              q.type ===
-              "subjective"
-            ) {
-              if (
-                ans &&
-                (
-                  ans.text?.trim() ||
-                  ans.drawing
-                )
-              ) {
-                actualAnsweredCount++;
-              }
-            } else if (
-              ans !== undefined
-            ) {
-              actualAnsweredCount++;
-            }
-          }
-        );
-
-        const submissionId =
-          `${exam.id}_${student.id}`;
-
-        const newSubmission: Submission = {
-          submissionId,
-
-          studentId:
-            student.id,
-
-          studentName:
-            student.name,
-
-          studentClassName:
-            student.className,
-
-          examId:
-            exam.id,
-
-          examTitle:
-            exam.title,
-
-          score: 0,
-
-          totalPoints,
-
-          answeredCount:
-            actualAnsweredCount,
-
-          totalQuestions:
-            exam.questions.length,
-
-          submittedAt:
-            new Date().toISOString(),
-
-          status:
-            "ทุจริต",
-
-          answers:
-            originalAnswers,
-        };
-
-        setDoc(
-          doc(
-            db,
-            "submissions",
-            submissionId
-          ),
-          newSubmission
-        )
-          .then(() => {
+        submitExamForScoring({
+          examId: exam.id,
+          studentId: student.id,
+          answers: originalAnswers,
+          status: "ทุจริต",
+        })
+          .then(({ submission }) => {
             clearSavedExamSession();
 
             deadlineRef.current =
@@ -469,7 +398,7 @@ export default function StudentExamRoom({
             setCheatCount(0);
 
             onExamSubmitted(
-              newSubmission
+              submission
             );
           })
           .catch((error) => {
@@ -481,6 +410,10 @@ export default function StudentExamRoom({
             alert(
               "ไม่สามารถบันทึกผลสอบได้ กรุณาแจ้งครูผู้คุมสอบ"
             );
+          })
+          .finally(() => {
+            isSubmittingRef.current = false;
+            setIsSubmitting(false);
           });
       }
     };
@@ -746,26 +679,13 @@ export default function StudentExamRoom({
           q.options &&
           q.options.length > 0
         ) {
-          const mappedOptions =
-            q.options.map(
-              (opt, idx) => ({
-                text: opt,
-
-                isCorrect:
-                  idx === q.answerIndex,
-
-                originalIndex: idx,
-              })
-            );
+          const mappedOptions = q.options.map((opt, idx) => ({
+            text: opt,
+            originalIndex: idx,
+          }));
 
           const shuffledOptions =
             shuffleArray(mappedOptions);
-
-          const newAnswerIndex =
-            shuffledOptions.findIndex(
-              (opt) =>
-                opt.isCorrect
-            );
 
           const originalIndexMapping =
             shuffledOptions.map(
@@ -781,9 +701,6 @@ export default function StudentExamRoom({
                 (opt) =>
                   opt.text
               ),
-
-            answerIndex:
-              newAnswerIndex,
 
             originalIndexMapping,
           };
@@ -976,11 +893,12 @@ export default function StudentExamRoom({
 
       if (
         !exam ||
-        isSubmitting
+        isSubmittingRef.current
       ) {
         return;
       }
 
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
 
       try {
@@ -997,102 +915,12 @@ export default function StudentExamRoom({
             processedAnswers
           );
 
-        let totalPoints = 0;
-        let autoScore = 0;
-        let actualAnsweredCount = 0;
-
-        exam.questions.forEach(
-          (q) => {
-            totalPoints +=
-              q.points;
-
-            const ans =
-              processedAnswers[
-                q.id
-              ];
-
-            if (
-              q.type ===
-              "subjective"
-            ) {
-              if (
-                ans &&
-                (
-                  ans.text?.trim() ||
-                  ans.drawing
-                )
-              ) {
-                actualAnsweredCount++;
-              }
-            } else if (
-              ans !== undefined
-            ) {
-              actualAnsweredCount++;
-
-              if (
-                Number(ans) ===
-                Number(
-                  q.answerIndex
-                )
-              ) {
-                autoScore +=
-                  q.points;
-              }
-            }
-          }
-        );
-
-        const submissionId =
-          `${exam.id}_${student.id}`;
-
-        const newSubmission: Submission =
-          {
-            submissionId,
-
-            studentId:
-              student.id,
-
-            studentName:
-              student.name,
-
-            studentClassName:
-              student.className,
-
-            examId:
-              exam.id,
-
-            examTitle:
-              exam.title,
-
-            score:
-              autoScore,
-
-            totalPoints,
-
-            answeredCount:
-              actualAnsweredCount,
-
-            totalQuestions:
-              exam.questions.length,
-
-            submittedAt:
-              new Date().toISOString(),
-
-            status:
-              "สมบูรณ์",
-
-            answers:
-              originalAnswers,
-          };
-
-        await setDoc(
-          doc(
-            db,
-            "submissions",
-            submissionId
-          ),
-          newSubmission
-        );
+        const { submission: newSubmission } = await submitExamForScoring({
+          examId: exam.id,
+          studentId: student.id,
+          answers: originalAnswers,
+          status: "สมบูรณ์",
+        });
 
         /**
          * ส่งสำเร็จ
@@ -1141,6 +969,7 @@ export default function StudentExamRoom({
           "ไม่สามารถส่งข้อสอบได้ในขณะนี้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง"
         );
       } finally {
+        isSubmittingRef.current = false;
         setIsSubmitting(
           false
         );

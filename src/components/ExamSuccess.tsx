@@ -17,23 +17,19 @@ export default function ExamSuccess({
 
   let totalChoiceCount = 0;
   let totalChoicePoints = 0;
-  let earnedChoicePoints = 0;
+  const earnedChoicePoints = submission.score;
 
   let totalSubjectiveCount = 0;
   let totalSubjectivePoints = 0;
 
   if (exam) {
     exam.questions.forEach((q) => {
-      const studentAns = submission.answers[q.id];
       if (q.type === "subjective") {
         totalSubjectiveCount++;
         totalSubjectivePoints += q.points;
       } else {
         totalChoiceCount++;
         totalChoicePoints += q.points;
-        if (studentAns !== undefined && Number(studentAns) === Number(q.answerIndex)) {
-          earnedChoicePoints += q.points;
-        }
       }
     });
   }

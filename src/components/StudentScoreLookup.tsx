@@ -1,14 +1,5 @@
 import React, { useState } from "react";
 import { Student, Submission, Exam } from "../types";
-import { db } from "../lib/firebase";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-} from "firebase/firestore";
 
 interface StudentScoreLookupProps {
   students: Student[];
@@ -46,17 +37,16 @@ export default function StudentScoreLookup({
   setHasSearched(false);
 
   try {
-    // 1. อ่านเฉพาะนักเรียนคนนี้
-    const studentRef = doc(
-      db,
-      "students",
-      studentId
-    );
+    const response = await fetch("/api/student-access", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        studentId,
+        examIds: exams.map((exam) => exam.id),
+      }),
+    });
 
-    const studentSnapshot =
-      await getDoc(studentRef);
-
-    if (!studentSnapshot.exists()) {
+    if (response.status === 404) {
       setErrorText(
         "ไม่พบข้อมูลนักเรียนรหัสนี้ในฐานข้อมูล"
       );
@@ -68,34 +58,14 @@ export default function StudentScoreLookup({
       return;
     }
 
-    const foundStudent = {
-      id: studentSnapshot.id,
-      ...studentSnapshot.data(),
-    } as Student;
+    if (!response.ok) throw new Error("Score lookup request failed");
 
-    // 2. อ่านเฉพาะผลสอบของนักเรียนคนนี้
-    const submissionQuery = query(
-      collection(db, "submissions"),
-      where(
-        "studentId",
-        "==",
-        studentId
-      )
-    );
-
-    const submissionSnapshot =
-      await getDocs(
-        submissionQuery
-      );
-
-    const studentSubmissions =
-      submissionSnapshot.docs.map(
-        (docSnapshot) => ({
-          submissionId:
-            docSnapshot.id,
-          ...docSnapshot.data(),
-        })
-      ) as Submission[];
+    const access = await response.json() as {
+      student: Student;
+      submissions: Submission[];
+    };
+    const foundStudent = access.student;
+    const studentSubmissions = access.submissions;
 
     // 3. เรียงผลสอบล่าสุดก่อน
     studentSubmissions.sort(
@@ -246,32 +216,14 @@ export default function StudentScoreLookup({
                     {results.map((sub) => {
                       const subExam = exams.find((e) => e.id === sub.examId);
                       
-                      let totalChoiceCount = 0;
-                      let totalChoicePoints = 0;
-                      let earnedChoicePoints = 0;
-
                       let totalSubjectiveCount = 0;
                       let totalSubjectivePoints = 0;
-                      let gradedSubjectivePoints = 0;
-                      let isGraded = true; // By default, if no subjective questions, it is fully graded
 
                       if (subExam) {
                         subExam.questions.forEach((q) => {
-                          const studentAns = sub.answers[q.id];
                           if (q.type === "subjective") {
                             totalSubjectiveCount++;
                             totalSubjectivePoints += q.points;
-                            if (studentAns && typeof studentAns.assignedScore === "number") {
-                              gradedSubjectivePoints += studentAns.assignedScore;
-                            } else {
-                              isGraded = false;
-                            }
-                          } else {
-                            totalChoiceCount++;
-                            totalChoicePoints += q.points;
-                            if (studentAns !== undefined && Number(studentAns) === Number(q.answerIndex)) {
-                              earnedChoicePoints += q.points;
-                            }
                           }
                         });
                       }
@@ -288,12 +240,8 @@ export default function StudentScoreLookup({
                                 ID: {sub.submissionId}
                               </span>
                               {totalSubjectiveCount > 0 && (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                  isGraded 
-                                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700" 
-                                    : "bg-amber-50 border border-amber-200 text-amber-700 animate-pulse"
-                                }`}>
-                                  {isGraded ? "ตรวจอัตนัยเสร็จแล้ว" : "รอคุณครูตรวจอัตนัย"}
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700">
+                                  มีข้ออัตนัย โปรดตรวจสอบกับคุณครู
                                 </span>
                               )}
                               <span className="text-[10px] bg-[#ffe9e7] text-[#8e171c] font-black px-2 py-0.5 rounded-full border border-[#8e171c]/15">
@@ -302,20 +250,11 @@ export default function StudentScoreLookup({
                             </div>
                             <h5 className="font-bold text-[#251817] text-lg leading-snug">{sub.examTitle}</h5>
                             
-                            {/* Breakdown */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                              {totalChoiceCount > 0 && (
-                                <div className="text-xs bg-[#fff8f7] border border-[#e0bfbc]/30 rounded-xl p-2.5">
-                                  <span className="text-[#8c706e] font-semibold block mb-0.5">ส่วนปรนัย:</span>
-                                  <span className="font-bold text-[#8e171c]">{earnedChoicePoints} / {totalChoicePoints} คะแนน</span>
-                                </div>
-                              )}
+                            <div className="grid grid-cols-1 gap-3 pt-2">
                               {totalSubjectiveCount > 0 && (
                                 <div className="text-xs bg-[#fff8f7] border border-[#e0bfbc]/30 rounded-xl p-2.5">
                                   <span className="text-[#8c706e] font-semibold block mb-0.5">ส่วนอัตนัย:</span>
-                                  <span className="font-bold text-[#8e171c]">
-                                    {isGraded ? `${gradedSubjectivePoints} / ${totalSubjectivePoints} คะแนน` : `รอตรวจ (${totalSubjectivePoints} คะแนน)`}
-                                  </span>
+                                  <span className="font-bold text-[#8e171c]">รวม {totalSubjectivePoints} คะแนน</span>
                                 </div>
                               )}
                             </div>
