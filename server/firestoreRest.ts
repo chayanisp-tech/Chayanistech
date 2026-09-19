@@ -12,6 +12,7 @@ interface CachedToken {
 }
 
 let cachedToken: CachedToken | null = null;
+let tokenRequest: Promise<string> | null = null;
 
 const base64Url = (value: string): string =>
   Buffer.from(value).toString("base64url");
@@ -28,11 +29,7 @@ function getServiceAccount(): ServiceAccount {
   return account as ServiceAccount;
 }
 
-async function getAccessToken(account: ServiceAccount): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
-    return cachedToken.value;
-  }
-
+async function requestAccessToken(account: ServiceAccount): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = base64Url(JSON.stringify({
@@ -66,6 +63,19 @@ async function getAccessToken(account: ServiceAccount): Promise<string> {
   return cachedToken.value;
 }
 
+async function getAccessToken(account: ServiceAccount): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+    return cachedToken.value;
+  }
+
+  if (!tokenRequest) {
+    tokenRequest = requestAccessToken(account).finally(() => {
+      tokenRequest = null;
+    });
+  }
+  return tokenRequest;
+}
+
 function decodeValue(value: any): any {
   if (value === undefined) return undefined;
   if ("nullValue" in value) return null;
@@ -84,18 +94,46 @@ function decodeFields(fields: Record<string, any>): Record<string, any> {
   );
 }
 
+function encodeValue(value: any): Record<string, any> {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? { integerValue: String(value) }
+      : { doubleValue: value };
+  }
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(encodeValue) } };
+  }
+  if (typeof value === "object") {
+    return { mapValue: { fields: encodeFields(value) } };
+  }
+  throw new Error("Unsupported Firestore value");
+}
+
+function encodeFields(value: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => [key, encodeValue(fieldValue)])
+  );
+}
+
+function getDocumentUrl(account: ServiceAccount, collection: string, documentId: string) {
+  const databaseId = process.env.FIREBASE_DATABASE_ID || "(default)";
+  const path = [collection, documentId].map(encodeURIComponent).join("/");
+  return "https://firestore.googleapis.com/v1/projects/" +
+    encodeURIComponent(account.project_id) +
+    "/databases/" + encodeURIComponent(databaseId) +
+    "/documents/" + path;
+}
+
 export async function getServerDocument(
   collection: string,
   documentId: string
 ): Promise<Record<string, any> | null> {
   const account = getServiceAccount();
   const token = await getAccessToken(account);
-  const databaseId = process.env.FIREBASE_DATABASE_ID || "(default)";
-  const path = [collection, documentId].map(encodeURIComponent).join("/");
-  const url = "https://firestore.googleapis.com/v1/projects/" +
-    encodeURIComponent(account.project_id) +
-    "/databases/" + encodeURIComponent(databaseId) +
-    "/documents/" + path;
+  const url = getDocumentUrl(account, collection, documentId);
   const response = await fetch(url, {
     headers: { authorization: "Bearer " + token },
   });
@@ -104,4 +142,30 @@ export async function getServerDocument(
   if (!response.ok) throw new Error("Unable to read answer key");
   const document = await response.json() as { fields?: Record<string, any> };
   return decodeFields(document.fields || {});
+}
+
+export async function createServerDocument(
+  collection: string,
+  documentId: string,
+  data: Record<string, any>
+): Promise<void> {
+  const account = getServiceAccount();
+  const token = await getAccessToken(account);
+  const url = getDocumentUrl(account, collection, documentId) +
+    "?currentDocument.exists=false";
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      authorization: "Bearer " + token,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ fields: encodeFields(data) }),
+  });
+
+  if (response.status === 409 || response.status === 412) {
+    const error = new Error("Document already exists");
+    error.name = "DocumentAlreadyExistsError";
+    throw error;
+  }
+  if (!response.ok) throw new Error("Unable to save scored submission");
 }
