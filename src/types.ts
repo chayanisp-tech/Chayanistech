@@ -10,7 +10,7 @@ export interface Question {
   id: string;
   text: string;
   options: string[];
-  answerIndex: number; 
+  answerIndex?: number;
   points: number;
   type?: "choice" | "subjective";
   

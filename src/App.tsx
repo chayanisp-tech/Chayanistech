@@ -4,23 +4,17 @@ import {
   DEFAULT_STUDENTS,
   DEFAULT_EXAMS,
   DEFAULT_SETTINGS,
-  DEFAULT_SUBMISSIONS,
 } from "./lib/mockData";
 import { initAuth, getAccessToken, logout, googleSignIn, db } from "./lib/firebase";
 import {
   collection,
   getDocs,
-  doc,
-  getDoc,
-  query,
-  where,
 } from "firebase/firestore";
 import {
   searchDatabaseSpreadsheet,
   createDatabaseSpreadsheet,
   syncLocalToSheets,
   fetchFromSheets,
-  fetchPublicSheetsData,
   mergeSubmissionsPreservingDrawings,
 } from "./lib/googleSheets";
 import {
@@ -54,6 +48,11 @@ type Screen =
 // -------------------------------------------------------------
 const MY_MASTER_SHEET_ID = "2PACX-1vSzmn3y4fHvfUMB7S3owYx4SkNG4kcYoBlwSzNv0yCD0a6dvcFhMk4VsKItz25GWvHcOzJ4HN9oM1Tt";
 
+const withoutAnswerKeys = (source: Exam[]): Exam[] => source.map((exam) => ({
+  ...exam,
+  questions: exam.questions.map(({ answerIndex: _answerIndex, ...question }) => question),
+}));
+
 // 🛠️ แก้ไขฟังก์ชันให้รองรับการแกะ ID จาก URL ทั่วไป และ ลิงก์เผยแพร่องค์กร (/d/e/) อย่างถูกต้อง ไม่หลุดเป็นคำว่า "e"
 const extractSpreadsheetId = (urlOrId: string | null): string | null => {
   if (!urlOrId) return null;
@@ -79,6 +78,7 @@ export default function App() {
   // Local State
   const [students, setStudents] = useState<Student[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
+  const [publicExams, setPublicExams] = useState<Exam[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [settings, setSettings] = useState<SystemSettings>(() => {
     const savedData = localStorage.getItem("savedTeacherSettings");
@@ -135,71 +135,21 @@ export default function App() {
     };
   }, [currentScreen]);
 
-  // 🛠️ ปรับปรุงฟังก์ชันโหลดข้อมูลให้เรียกผ่าน Dual-Mode Parser จาก googleSheets.ts โดยตรง ไม่ทำงานซ้อนกัน
-  const loadPublicData = async (sheetId: string) => {
-    const cleanSheetId = extractSpreadsheetId(sheetId);
-    if (!cleanSheetId) return false;
-
+  const loadPublicData = async () => {
     setIsLoadingPublicData(true);
     setPublicDataError(null);
     try {
-      // เรียกใช้ฟังก์ชันหลักที่เราอัปเดตระบบ CSV ทะลุกำแพงไว้แล้ว
-      const fetched = await fetchPublicSheetsData(cleanSheetId);
-      
-      if (fetched) {
-        if (fetched.students && fetched.students.length > 0) {
-          setStudents(fetched.students);
-          localStorage.setItem("exam_students", JSON.stringify(fetched.students));
-        }
-        if (fetched.exams && fetched.exams.length > 0) {
-          setExams(fetched.exams);
-          localStorage.setItem("exam_exams", JSON.stringify(fetched.exams));
-        }
-        if (fetched.settings) {
-          const mergedSettings = { ...DEFAULT_SETTINGS, ...fetched.settings };
-          setSettings(mergedSettings);
-          localStorage.setItem("exam_settings", JSON.stringify(mergedSettings));
-        }
-        
-        const isPublishedToken = cleanSheetId.startsWith("2PACX-");
-        const updatedSync: SyncStatus = {
-          spreadsheetId: cleanSheetId,
-          spreadsheetUrl: isPublishedToken 
-            ? `https://docs.google.com/spreadsheets/d/e/${cleanSheetId}/pubhtml`
-            : `https://docs.google.com/spreadsheets/d/${cleanSheetId}/edit`,
-          lastSyncedAt: new Date().toISOString(),
-          isSyncing: false,
-          error: null,
-        };
-        setSyncStatus(updatedSync);
-        localStorage.setItem("exam_sync_status", JSON.stringify(updatedSync));
-        setActiveSheetId(cleanSheetId);
-
-        alert(`📢 เชื่อมต่อ Google Sheets สำเร็จ!\n• ดึงรายชื่อนักเรียนได้ทั้งหมด: ${fetched.students?.length || 0} คน\n• ดึงข้อสอบได้ทั้งหมด: ${fetched.exams?.length || 0} ชุด`);
-        return true;
-      }
-      return false;
+      const snapshot = await getDocs(collection(db, "exams_public"));
+      const safeExams = snapshot.docs.map((examDoc) => ({
+        id: examDoc.id,
+        ...examDoc.data(),
+      })) as Exam[];
+      setPublicExams(safeExams);
+      localStorage.setItem("exam_public_exams", JSON.stringify(safeExams));
+      return true;
     } catch (err: any) {
-      console.error("Public fetch failed:", err);
-      
-      const isFailedToFetch = err instanceof TypeError || err.message?.includes("Failed to fetch") || err.message?.includes("fetch");
-      
-      if (err.message === "ORGANIZATION_RESTRICTED" || isFailedToFetch) {
-        const errorMsg = "❌ บัญชีโรงเรียนบล็อกการเข้าถึงแบบสาธารณะ";
-        setPublicDataError(errorMsg);
-        
-        alert(
-          "⚠️ ตรวจพบข้อจำกัดความปลอดภัยของโรงเรียน! (Google Workspace Restriction)\n\n" +
-          "เนื่องจากชีตนี้อยู่ภายใต้บัญชีโรงเรียน แม้คุณครูจะเปิดแชร์แล้ว แต่ระบบ Google จะบังคับให้เข้าสู่ระบบและบล็อกการดึงข้อมูลในโหมดไม่ระบุตัวตน (Incognito)\n\n" +
-          "💡 วิธีการแก้ไขให้ผ่านทันที:\n" +
-          "1. เปิดหน้า Google Sheets ของคุณครูขึ้นมา\n" +
-          "2. ไปที่เมนู [ไฟล์] (File) > [แชร์] (Share) > [เผยแพร่ไปยังเว็บ] (Publish to the web)\n" +
-          "3. คลิกปุ่ม [เผยแพร่] (Publish) และกดตกลง\n" +
-          "4. ลองเปิดหน้าระบบสอบนี้ใหม่อีกครั้ง ระบบจะผ่านและสามารถดึงรายชื่อกับข้อสอบได้สำเร็จ 100% ครับ!"
-        );
-      } else {
-        setPublicDataError("เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อดึงข้อสอบล่าสุด กรุณาตรวจสอบลิงก์ของท่าน");
-      }
+      console.error("Public exam fetch failed:", err);
+      setPublicDataError("ไม่สามารถโหลดข้อสอบสำหรับนักเรียนได้ กรุณาลองใหม่อีกครั้ง");
       return false;
     } finally {
       setIsLoadingPublicData(false);
@@ -212,8 +162,9 @@ export default function App() {
     setPublicDataError(null);
     setStudents(DEFAULT_STUDENTS);
     localStorage.setItem("exam_students", JSON.stringify(DEFAULT_STUDENTS));
-    setExams(DEFAULT_EXAMS);
-    localStorage.setItem("exam_exams", JSON.stringify(DEFAULT_EXAMS));
+    const safeDemoExams = withoutAnswerKeys(DEFAULT_EXAMS);
+    setPublicExams(safeDemoExams);
+    localStorage.setItem("exam_public_exams", JSON.stringify(safeDemoExams));
     setSettings(DEFAULT_SETTINGS);
     localStorage.setItem("exam_settings", JSON.stringify(DEFAULT_SETTINGS));
     const clearedSync: SyncStatus = {
@@ -237,19 +188,23 @@ export default function App() {
       
       // 1. ดึงข้อมูลจากความจำเครื่อง (LocalStorage) ขึ้นมาแสดงผลก่อนทันที เพื่อไม่ให้นักเรียนต้องรอนาน
       const localStudents = localStorage.getItem("exam_students");
-      const localExams = localStorage.getItem("exam_exams");
-      const localSubmissions = localStorage.getItem("exam_submissions");
+      const localPublicExams = localStorage.getItem("exam_public_exams");
       const localSettings = localStorage.getItem("exam_settings");
       const localSync = localStorage.getItem("exam_sync_status");
 
       if (localStudents) setStudents(JSON.parse(localStudents));
       else setStudents(DEFAULT_STUDENTS);
 
-      if (localExams) setExams(JSON.parse(localExams));
-      else setExams(DEFAULT_EXAMS);
+      if (localPublicExams) setPublicExams(JSON.parse(localPublicExams));
+      else setPublicExams([]);
 
-      if (localSubmissions) setSubmissions(JSON.parse(localSubmissions));
-      else setSubmissions(DEFAULT_SUBMISSIONS);
+      // Never hydrate answer keys into an unauthenticated student session.
+      localStorage.removeItem("exam_exams");
+
+      // Submission answers are teacher-only data. Never hydrate a previous
+      // teacher session into an unauthenticated student page.
+      setSubmissions([]);
+      localStorage.removeItem("exam_submissions");
 
       if (localSettings) setSettings(JSON.parse(localSettings));
       else setSettings(DEFAULT_SETTINGS);
@@ -267,8 +222,8 @@ export default function App() {
 
         let fExams: Exam[] = [];
         try {
-          // ดึงเฉพาะคอลเลกชันข้อสอบ
-          const examsSnapshot = await getDocs(collection(db, "exams"));
+          // Student browsers only receive the public collection.
+          const examsSnapshot = await getDocs(collection(db, "exams_public"));
           fExams = examsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Exam[];
           console.log(`✅ ดึงข้อมูลข้อสอบสำเร็จ (${fExams.length} ชุด)`);
         } catch (examErr) {
@@ -280,18 +235,8 @@ export default function App() {
       
 
         if (fExams && fExams.length > 0) {
-          setExams(fExams);
-          localStorage.setItem("exam_exams", JSON.stringify(fExams));
-        } else if (localExams) {
-          try {
-            const parsedLocalExams = JSON.parse(localExams);
-            if (parsedLocalExams.length > 0) {
-              console.log("☁️ ระบบตรวจพบข้อสอบในเครื่องครู แต่คลาวด์ว่างเปล่า -> กำลังอัปโหลดขึ้น Firebase...");
-              syncExamsToFirestore(parsedLocalExams).catch(err => console.error(err));
-            }
-          } catch (pErr) {
-            console.error("Error parsing local exams:", pErr);
-          }
+          setPublicExams(fExams);
+          localStorage.setItem("exam_public_exams", JSON.stringify(fExams));
         }
 
   
@@ -336,7 +281,10 @@ export default function App() {
     }
     if (updatedExams) {
       setExams(updatedExams);
+      const safeExams = withoutAnswerKeys(updatedExams);
+      setPublicExams(safeExams);
       localStorage.setItem("exam_exams", JSON.stringify(updatedExams));
+      localStorage.setItem("exam_public_exams", JSON.stringify(safeExams));
       syncExamsToFirestore(updatedExams).catch(err => console.error(err));
     }
     if (updatedSubmissions) {
@@ -484,40 +432,33 @@ export default function App() {
   studentId: string
 ): Promise<{ success: boolean; message?: string }> => {
   try {
-    // ดึงข้อมูลนักเรียนเฉพาะคนนี้ 1 document
-    const studentRef = doc(db, "students", studentId);
-    const studentSnapshot = await getDoc(studentRef);
+    const response = await fetch("/api/student-access", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        studentId,
+        examIds: publicExams.map((exam) => exam.id),
+      }),
+    });
 
-    if (!studentSnapshot.exists()) {
+    if (response.status === 404) {
       return {
         success: false,
         message:
           "ไม่พบรหัสนักเรียนนี้ในฐานข้อมูล กรุณาตรวจสอบอีกครั้ง",
       };
     }
+    if (!response.ok) throw new Error("Student access request failed");
 
-    const studentObj = {
-      id: studentSnapshot.id,
-      ...studentSnapshot.data(),
-    } as Student;
-
-    // ดึงเฉพาะผลสอบของนักเรียนคนนี้
-    const submissionsQuery = query(
-      collection(db, "submissions"),
-      where("studentId", "==", studentId)
-    );
-
-    const submissionsSnapshot =
-      await getDocs(submissionsQuery);
-
-    const studentSubmissions =
-      submissionsSnapshot.docs.map((docSnapshot) => ({
-        submissionId: docSnapshot.id,
-        ...docSnapshot.data(),
-      })) as Submission[];
+    const access = await response.json() as {
+      student: Student;
+      submissions: Submission[];
+    };
+    const studentObj = access.student;
+    const studentSubmissions = access.submissions;
 
     // ตรวจเฉพาะข้อสอบที่เปิดอยู่
-    const activeExams = exams.filter(
+    const activeExams = publicExams.filter(
       (exam) => exam.isActive
     );
 
@@ -636,6 +577,7 @@ export default function App() {
       if (firestoreData) {
         setStudents(firestoreData.students);
         setExams(firestoreData.exams);
+        setPublicExams(withoutAnswerKeys(firestoreData.exams));
         setSubmissions(firestoreData.submissions);
         if (firestoreData.settings) setSettings(firestoreData.settings);
 
@@ -661,6 +603,10 @@ export default function App() {
       await logout();
       setIsOAuthConnected(false);
       setTeacherEmail("");
+      setExams([]);
+      setSubmissions([]);
+      localStorage.removeItem("exam_exams");
+      localStorage.removeItem("exam_submissions");
       setCurrentScreen("student_welcome");
     }
   };
@@ -690,7 +636,7 @@ export default function App() {
         <StudentWelcome
           students={students}
           submissions={submissions}
-          activeExams={exams}
+          activeExams={publicExams}
           onEnterExamRoom={handleEnterExamRoom}
           onGoToTeacherLogin={() => setCurrentScreen("teacher_login")}
           onGoToScoreLookup={() => setCurrentScreen("student_score_lookup")}
@@ -698,14 +644,14 @@ export default function App() {
           publicDataError={publicDataError}
           activeSheetId={activeSheetId}
           onResetToDemo={handleResetToDemo}
-          onRetryLoadPublicData={() => activeSheetId && loadPublicData(activeSheetId)}
+          onRetryLoadPublicData={() => loadPublicData()}
         />
       )}
 
       {currentScreen === "student_exam" && currentStudent && (
         <StudentExamRoom
           student={currentStudent}
-          activeExams={exams}
+          activeExams={publicExams}
           submissions={submissions}
           onExamSubmitted={handleExamSubmitted}
           onGoBack={() => {
@@ -718,7 +664,7 @@ export default function App() {
       {currentScreen === "student_success" && latestSubmission && (
         <ExamSuccess
           submission={latestSubmission}
-          exams={exams}
+          exams={publicExams}
           onGoHome={() => {
             setCurrentStudent(null);
             setLatestSubmission(null);
@@ -732,7 +678,7 @@ export default function App() {
         <StudentScoreLookup
           students={students}
           submissions={submissions}
-          exams={exams}
+          exams={publicExams}
           onGoBack={() => {
             setCurrentStudent(null);
             setLatestSubmission(null);
