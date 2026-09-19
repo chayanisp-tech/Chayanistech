@@ -25,11 +25,11 @@ service cloud.firestore {
     }
 
     /**
-     * Legacy exam documents. Public read remains temporarily enabled until
-     * every active exam has been copied and the student read path is switched.
+     * Legacy teacher documents contain answerIndex and must never be readable
+     * by an unauthenticated student browser.
      */
     match /exams/{examId} {
-      allow read: if true;
+      allow read: if isTeacher();
 
       allow create, update, delete: if isTeacher();
     }
@@ -53,37 +53,12 @@ service cloud.firestore {
     /**
      * Submission
      *
-     * นักเรียนสามารถ query เฉพาะ studentId
-     * และเขียนผลของตัวเองได้
-     *
-     * ครูอ่าน/แก้ได้ทั้งหมด
+     * Browser access is teacher-only. Student reads and writes go through the
+     * Vercel server endpoints so scores cannot be supplied by the client.
      */
     match /submissions/{submissionId} {
       allow read: if isTeacher();
-
-      allow create: if
-        request.resource.data.studentId is string
-        && request.resource.data.examId is string
-        && request.resource.data.submissionId == submissionId
-        && submissionId ==
-          request.resource.data.examId
-          + "_"
-          + request.resource.data.studentId;
-
-      allow update: if
-        isTeacher()
-        || (
-          resource.data.studentId ==
-            request.resource.data.studentId
-          &&
-          resource.data.examId ==
-            request.resource.data.examId
-          &&
-          resource.data.submissionId ==
-            request.resource.data.submissionId
-        );
-
-      allow delete: if isTeacher();
+      allow create, update, delete: if isTeacher();
     }
 
     /**
